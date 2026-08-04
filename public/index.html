@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Automações Agendor</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo-dot"></div>
+        <span>Automações Agendor</span>
+      </div>
+      <nav id="automation-list" class="automation-list"></nav>
+    </aside>
+
+    <main class="content">
+      <div id="empty-state" class="empty-state">
+        <p>Selecione uma automação na barra lateral.</p>
+      </div>
+
+      <div id="automation-view" class="automation-view" hidden>
+        <header class="view-header">
+          <div>
+            <h1 id="automation-name"></h1>
+            <p id="automation-description" class="description"></p>
+          </div>
+          <div class="header-actions">
+            <button id="preview-button" class="preview-button" hidden>Pré-visualizar</button>
+            <button id="run-button" class="run-button">Rodar agora</button>
+          </div>
+        </header>
+
+        <div id="dynamic-content"></div>
+
+        <section class="log-section">
+          <h2 class="section-title">Execução</h2>
+          <pre id="log-output" class="log-output">Nenhuma execução ainda nesta sessão.</pre>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="/canvas.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
