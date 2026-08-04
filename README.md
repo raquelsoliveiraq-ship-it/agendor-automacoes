@@ -12,7 +12,10 @@ Dashboard local para rodar automações sobre a API do Agendor (v3).
 
 ## Instalação
 
-1. Descompacte o `.zip` do projeto em uma pasta (ex: `Documentos\agendor-automacao`).
+1. Baixe o projeto: no botão verde "Code" no topo desta página, clique em
+   "Download ZIP" e descompacte numa pasta (ex: `Documentos\agendor-automacao`).
+   Se preferir e já usar Git, também pode rodar
+   `git clone https://github.com/raquelsoliveiraq-ship-it/agendor-automacoes.git`.
 2. Abra um terminal **dentro dessa pasta**:
    - Windows: abra a pasta no Explorador, clique na barra de endereço, digite
      `cmd` e aperte Enter.
