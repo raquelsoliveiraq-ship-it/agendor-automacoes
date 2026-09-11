@@ -137,31 +137,29 @@ body {
   cursor: default;
 }
 
+/* Enquanto a rodada não termina: bolinha branca girando antes do texto. */
+.run-button.is-running::before {
+  content: '';
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: var(--white);
+  border-radius: 50%;
+  animation: preview-spin 0.7s linear infinite;
+}
+
+/* "Rodar agora" mora no fim do formulário agora, não no cabeçalho. */
+.run-row {
+  margin: -10px 0 28px;
+}
+
 .header-actions {
   display: flex;
   gap: 10px;
   flex-shrink: 0;
-}
-
-.preview-button {
-  background: var(--white);
-  color: var(--blue-700);
-  border: 1px solid var(--blue-600);
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.preview-button:hover {
-  background: var(--blue-50);
-}
-
-.preview-button:disabled {
-  opacity: 0.6;
-  cursor: default;
 }
 
 /* Config form */
@@ -193,6 +191,7 @@ body {
 }
 
 .form-field input,
+.form-field textarea,
 .form-field select {
   border: 1px solid var(--border);
   border-radius: 7px;
@@ -204,47 +203,99 @@ body {
 }
 
 .form-field input:focus,
+.form-field textarea:focus,
 .form-field select:focus {
   outline: 2px solid var(--blue-600);
   outline-offset: 1px;
 }
 
 .preview-result {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   background: var(--blue-100);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 10px 14px;
-  margin-bottom: 20px;
-  font-size: 0.9rem;
+  padding: 12px 16px;
+  margin: 2px 0 6px;
+  font-size: 1.05rem;
+  font-weight: 700;
   color: var(--blue-900);
 }
 
-/* History table */
+.preview-result[hidden] {
+  display: none;
+}
+
+.preview-spinner {
+  display: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(11, 47, 107, 0.25);
+  border-top-color: var(--blue-700);
+  border-radius: 50%;
+  animation: preview-spin 0.7s linear infinite;
+}
+
+/* Enquanto recalcula: o círculo gira ao lado do texto para deixar claro que a
+   filtragem ainda não terminou, e o texto fica levemente esmaecido para não
+   parecer que o número já é o final. */
+.preview-result.is-estimating .preview-spinner {
+  display: block;
+}
+
+.preview-result.is-estimating .preview-text {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+@keyframes preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* History table — referência, não a ação principal: fica discreto e compacto */
 .history-section {
   margin-bottom: 32px;
+  opacity: 0.8;
+  overflow-x: auto;
+}
+
+.history-section .section-title {
+  font-size: 0.8rem;
+  margin-bottom: 8px;
 }
 
 .history-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.88rem;
+  font-size: 0.76rem;
 }
 
 .history-table th {
   text-align: left;
   color: var(--text-muted);
   font-weight: 600;
-  font-size: 0.78rem;
+  font-size: 0.66rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  padding: 8px 10px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--border);
 }
 
 .history-table td {
-  padding: 9px 10px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
+}
+
+.history-more {
+  margin: 7px 2px 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 .history-table tr:last-child td {
@@ -309,6 +360,34 @@ body {
 
 .canvas-section {
   margin-bottom: 32px;
+}
+
+/* Seção "Etapas" recolhível: o <summary> vira um título que abre/fecha. */
+details.canvas-section > summary.section-title {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+details.canvas-section > summary.section-title::-webkit-details-marker {
+  display: none;
+}
+
+details.canvas-section > summary.section-title::before {
+  content: '\25B8';
+  font-size: 0.8rem;
+  transition: transform 0.15s ease;
+}
+
+details.canvas-section[open] > summary.section-title::before {
+  transform: rotate(90deg);
+}
+
+details.canvas-section:not([open]) > summary.section-title {
+  margin-bottom: 0;
 }
 
 /* Flow canvas (drag / zoom / pan) */
@@ -455,4 +534,552 @@ body {
   white-space: pre-wrap;
   max-height: 320px;
   overflow-y: auto;
+}
+
+/* Liga/desliga */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  margin-right: 6px;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: #c3cee0;
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 1px 3px rgba(11, 47, 107, 0.3);
+  transition: transform 0.15s ease;
+}
+
+.toggle input:checked + .toggle-track {
+  background: var(--blue-600);
+}
+
+.toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(18px);
+}
+
+.toggle input:focus-visible + .toggle-track {
+  outline: 2px solid var(--blue-700);
+  outline-offset: 2px;
+}
+
+.toggle-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.toggle input:checked ~ .toggle-text {
+  color: var(--blue-700);
+}
+
+.automation-view.is-disabled #dynamic-content {
+  opacity: 0.5;
+}
+
+.disabled-banner {
+  background: var(--blue-50);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 0.87rem;
+  color: var(--text-muted);
+  margin-bottom: 18px;
+}
+
+.automation-item .off-pill {
+  float: right;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+/* Rascunhos de e-mail */
+.drafts-section {
+  margin-top: 24px;
+}
+
+.draft-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  background: var(--white);
+}
+
+.draft-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.draft-who {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.draft-email {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 400;
+}
+
+.draft-deal {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.draft-subject {
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+.draft-body {
+  background: var(--blue-50);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 180px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+}
+
+.draft-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.draft-actions a,
+.draft-actions button {
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 7px;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--blue-700);
+  cursor: pointer;
+  text-decoration: none;
+  font-family: inherit;
+}
+
+.draft-actions a.primary {
+  background: var(--blue-600);
+  border-color: var(--blue-600);
+  color: var(--white);
+}
+
+.draft-actions .copied {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.missing-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.placeholder-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+}
+
+.placeholder-hint code {
+  background: var(--blue-50);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 0.78rem;
+}
+
+textarea.body-template {
+  min-height: 150px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+/* Conta do Gmail */
+.account-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--blue-50);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.account-bar label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--blue-900);
+}
+
+.account-bar input {
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 0.88rem;
+  font-family: inherit;
+  min-width: 230px;
+  background: var(--white);
+  color: var(--text);
+}
+
+.account-bar input:focus {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 1px;
+}
+
+.account-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.account-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--blue-600);
+  border-radius: 8px;
+  background: var(--blue-50);
+  font-size: 0.84rem;
+}
+
+.account-confirm button {
+  font-size: 0.82rem;
+  font-weight: 600;
+  border-radius: 7px;
+  padding: 6px 11px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--blue-700);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.account-confirm button.primary {
+  background: var(--blue-600);
+  border-color: var(--blue-600);
+  color: var(--white);
+}
+
+/* Modelos de e-mail — botão que abre um menu no estilo do Agendor */
+.template-bar.full-width {
+  grid-column: 1 / -1;
+}
+
+.template-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--blue-50);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 11px 14px;
+  margin-bottom: 16px;
+}
+
+.template-bar label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--blue-900);
+}
+
+.template-picker {
+  position: relative;
+}
+
+.template-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 230px;
+  padding: 7px 11px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--white);
+  color: var(--text);
+  font-size: 0.88rem;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.template-trigger:focus-visible {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 1px;
+}
+
+.template-caret {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.template-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 300px;
+  max-width: 78vw;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(11, 47, 107, 0.16);
+  padding: 6px;
+}
+
+.template-menu-title {
+  margin: 0;
+  padding: 6px 10px 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}
+
+.template-menu-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.template-menu-empty {
+  margin: 0;
+  padding: 8px 10px 10px;
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.template-menu-row {
+  display: flex;
+  align-items: center;
+  border-radius: 7px;
+}
+
+.template-menu-row:hover {
+  background: var(--blue-50);
+}
+
+.template-menu-row.is-active {
+  background: var(--blue-100);
+}
+
+.template-menu-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 6px 8px 10px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.template-menu-item > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.template-menu-check {
+  flex: none;
+  width: 14px;
+  color: var(--blue-600);
+  font-size: 0.8rem;
+  visibility: hidden;
+}
+
+.template-menu-row.is-active .template-menu-check {
+  visibility: visible;
+}
+
+.template-menu-del {
+  flex: none;
+  margin-right: 4px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+.template-menu-row:hover .template-menu-del,
+.template-menu-del:focus-visible {
+  visibility: visible;
+}
+
+.template-menu-del:hover {
+  background: #fde8e8;
+  color: #c0392b;
+}
+
+.template-menu-footer {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.template-menu-action {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--blue-700);
+  text-align: left;
+  cursor: pointer;
+}
+
+.template-menu-action:hover {
+  background: var(--blue-50);
+}
+
+.template-menu-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.template-menu-add-btn[hidden],
+.template-add-form[hidden] {
+  display: none;
+}
+
+.template-add-form {
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+}
+
+.template-add-form input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 0.88rem;
+  font-family: inherit;
+  background: var(--white);
+  color: var(--text);
+}
+
+.template-add-form input:focus {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 1px;
+}
+
+.template-add-form button.primary {
+  flex: none;
+  border: 1px solid var(--blue-600);
+  border-radius: 7px;
+  padding: 7px 12px;
+  background: var(--blue-600);
+  color: var(--white);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.template-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Nota "Como funciona" e resumo do que foi encontrado */
+.how-it-works {
+  background: var(--blue-50);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--blue-600);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 4px 0 24px;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.how-it-works strong {
+  display: block;
+  color: var(--blue-900);
+  margin-bottom: 6px;
+}
+
+.how-it-works ul {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.55;
+}
+
+.how-it-works li {
+  margin-bottom: 3px;
+}
+
+.result-summary {
+  background: var(--blue-100);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 6px 0 12px;
+  font-size: 0.88rem;
+  color: var(--blue-900);
+  line-height: 1.45;
 }

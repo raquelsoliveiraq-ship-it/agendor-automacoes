@@ -12,7 +12,13 @@ function statePath(automationId) {
 export function loadState(automationId, defaultState) {
   const file = statePath(automationId);
   if (!fs.existsSync(file)) return { ...defaultState };
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    // Arquivo corrompido (escrita interrompida, etc.) — volta ao padrão em vez
+    // de derrubar o dashboard.
+    return { ...defaultState };
+  }
 }
 
 export function saveState(automationId, state) {

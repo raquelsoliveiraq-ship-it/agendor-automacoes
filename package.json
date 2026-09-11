@@ -4,9 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node src/runAutomation.js",
     "inspect": "node src/inspect.js",
-    "dashboard": "node src/server.js"
+    "dashboard": "node --watch src/server.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",

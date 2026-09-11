@@ -228,7 +228,9 @@ function createFlowCanvas(container, automationId) {
 
   applyView();
 
-  return { setSteps };
+  // `refit` deixa o quadro reajustar quando ele só ganha tamanho depois de
+  // renderizado (por exemplo, ao abrir a seção "Etapas" pela primeira vez).
+  return { setSteps, refit: fitToContent };
 }
 
 window.createFlowCanvas = createFlowCanvas;

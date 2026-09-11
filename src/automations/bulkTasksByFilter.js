@@ -1,15 +1,73 @@
-import { listCategories, listUsers, listOrganizations, listPeopleByFilters, createPersonTask } from '../agendorClient.js';
+import { listCategories, listUsers, listOrganizations, createPersonTask, createOrganizationTask } from '../agendorClient.js';
 import { loadState, saveState } from '../stateStore.js';
+import { cachedOptions } from '../optionsCache.js';
+import {
+  collectContacts as queryContacts,
+  collectOrgsWithoutPeople,
+  orgFilterOptions,
+  ORG_FILTER_FIELDS,
+} from './peopleQuery.js';
 
 export const meta = {
   id: 'bulk-tasks-by-filter',
   name: 'Tarefas em massa por filtro',
-  description: 'Cria uma tarefa igual para todas as pessoas que casam com os filtros escolhidos, numa data específica.',
+  description:
+    'Cria uma tarefa igual para todas as pessoas que casam com os filtros escolhidos (por categoria de cliente ou por empresa/região), numa data específica. No modo empresa também dá para criar a tarefa nas empresas que ainda não têm nenhuma pessoa cadastrada — útil para ir atrás do responsável.',
   configurable: true,
   configSchema: [
-    { name: 'categoryId', label: 'Categoria', type: 'select', optionsSource: 'categories', allowEmpty: true, emptyLabel: 'Qualquer categoria' },
-    { name: 'ownerUserId', label: 'Responsável (dono do contato)', type: 'select', optionsSource: 'users', allowEmpty: true, emptyLabel: 'Qualquer responsável' },
-    { name: 'organizationId', label: 'Empresa', type: 'autocomplete', optionsSource: 'organizations', allowEmpty: true, emptyLabel: 'Qualquer empresa' },
+    {
+      name: 'source',
+      label: 'Filtrar por',
+      type: 'select',
+      options: [
+        { value: 'people', label: 'Categoria de cliente' },
+        { value: 'organizations', label: 'Empresa / região' },
+      ],
+      default: 'people',
+      required: true,
+    },
+    {
+      name: 'categoryId',
+      label: 'Categoria',
+      type: 'select',
+      optionsSource: 'categories',
+      allowEmpty: true,
+      emptyLabel: 'Qualquer categoria',
+      showWhen: { field: 'source', in: ['people', 'organizations'] },
+    },
+    {
+      name: 'ownerUserId',
+      label: 'Responsável',
+      type: 'select',
+      optionsSource: 'users',
+      allowEmpty: true,
+      emptyLabel: 'Qualquer responsável',
+      showWhen: { field: 'source', in: ['people', 'organizations'] },
+    },
+    {
+      name: 'organizationId',
+      label: 'Empresa',
+      type: 'autocomplete',
+      optionsSource: 'organizations',
+      allowEmpty: true,
+      emptyLabel: 'Qualquer empresa',
+      showWhen: { field: 'source', equals: 'people' },
+    },
+    // Filtros do modo "Empresa / região" (origem, setor, estado, cidade,
+    // produto). Filtram as empresas; a tarefa vai para as pessoas delas.
+    ...ORG_FILTER_FIELDS,
+    {
+      name: 'orgTarget',
+      label: 'Criar tarefa para',
+      type: 'select',
+      options: [
+        { value: 'people', label: 'Pessoas das empresas filtradas' },
+        { value: 'no-people', label: 'Empresas que ainda não têm nenhuma pessoa cadastrada' },
+      ],
+      default: 'people',
+      required: true,
+      showWhen: { field: 'source', equals: 'organizations' },
+    },
     { name: 'dueDate', label: 'Data de vencimento', type: 'date', required: true },
     { name: 'dueTime', label: 'Horário', type: 'time', default: '12:00', required: true },
     {
@@ -32,7 +90,9 @@ export const meta = {
     {
       label: 'Filtro',
       title: 'Pessoas que casam com',
-      detailTemplate: 'Categoria: {categoryId} · Responsável: {ownerUserId} · Empresa: {organizationId}',
+      detailTemplate:
+        'Fonte: {source} · Alvo: {orgTarget} · Categoria: {categoryId} · Responsável: {ownerUserId} · Empresa: {organizationId} · ' +
+        'Origem: {leadOriginId} · Setor: {sectorId} · Estado: {stateUf} · Cidade: {cityName} · Produto: {productId}',
     },
     {
       label: 'Ação',
@@ -43,44 +103,42 @@ export const meta = {
 };
 
 const MAX_PAGES = 50;
-const PER_PAGE = 100;
 const MAX_HISTORY = 30;
 
-// Cache em memória do processo — categorias/usuários/empresas mudam pouco
-// e a lista de empresas sozinha já leva vários requests paginados.
-const optionsCache = {};
-const OPTIONS_TTL_MS = 5 * 60 * 1000;
-
-export async function getOptions(source) {
-  const cached = optionsCache[source];
-  if (cached && Date.now() - cached.at < OPTIONS_TTL_MS) return cached.data;
-
-  let data;
-  if (source === 'categories') {
-    const categories = await listCategories();
-    data = categories.map((c) => ({ value: String(c.id), label: c.name }));
-  } else if (source === 'users') {
-    const users = await listUsers();
-    data = users.map((u) => ({ value: String(u.id), label: u.name }));
-  } else if (source === 'organizations') {
-    const organizations = await listOrganizations();
-    data = organizations.map((o) => ({ value: String(o.id), label: o.name }));
-  } else {
-    throw new Error(`Fonte de opções desconhecida: ${source}`);
-  }
-
-  optionsCache[source] = { data, at: Date.now() };
-  return data;
+export function getOptions(source) {
+  return cachedOptions(source, () => computeOptions(source));
 }
 
-async function fetchAllMatching({ categoryId, ownerUserId, organizationId }) {
-  const all = [];
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const batch = await listPeopleByFilters({ categoryId, ownerUserId, organizationId, page, perPage: PER_PAGE });
-    all.push(...batch);
-    if (batch.length < PER_PAGE) break;
+async function computeOptions(source) {
+  const org = await orgFilterOptions(source); // leadOrigins / sectors / products
+  if (org) return org;
+
+  if (source === 'categories') {
+    return (await listCategories()).map((c) => ({ value: String(c.id), label: c.name }));
   }
-  return all;
+  if (source === 'users') {
+    return (await listUsers()).map((u) => ({ value: String(u.id), label: u.name }));
+  }
+  if (source === 'organizations') {
+    return (await listOrganizations()).map((o) => ({ value: String(o.id), label: o.name }));
+  }
+  throw new Error(`Fonte de opções desconhecida: ${source}`);
+}
+
+// Devolve { kind, targets }, onde targets é sempre [{ id, name, ... }]:
+//   kind 'people'        — tarefa por pessoa (POST /people/{id}/tasks).
+//   kind 'organizations' — tarefa por empresa (POST /organizations/{id}/tasks).
+//
+// 'people' (categoria) e o modo empresa com alvo "pessoas" caem no primeiro
+// caso. O modo empresa com alvo "empresas sem pessoa" cai no segundo: filtra as
+// empresas e fica só com as que não têm nenhuma pessoa cadastrada.
+async function collectTargets(config) {
+  if (config.source === 'organizations' && config.orgTarget === 'no-people') {
+    const orgs = await collectOrgsWithoutPeople(config, { maxPages: MAX_PAGES });
+    return { kind: 'organizations', targets: orgs };
+  }
+  const { people } = await queryContacts(config, { maxPages: MAX_PAGES });
+  return { kind: 'people', targets: people };
 }
 
 function buildDueDate(config) {
@@ -92,10 +150,11 @@ export function getState() {
 }
 
 export async function preview(config) {
-  const people = await fetchAllMatching(config);
+  const { kind, targets } = await collectTargets(config);
   return {
-    matchedCount: people.length,
-    sample: people.slice(0, 10).map((p) => p.name),
+    matchedCount: targets.length,
+    kind,
+    sample: targets.slice(0, 10).map((t) => t.name),
   };
 }
 
@@ -104,43 +163,44 @@ export async function run({ log = () => {}, config }) {
     throw new Error('Preencha data, horário, texto da tarefa e responsável antes de rodar.');
   }
 
-  const people = await fetchAllMatching(config);
-  log(`Encontradas ${people.length} pessoa(s) com os filtros selecionados.`);
+  const { kind, targets } = await collectTargets(config);
+  const unit = kind === 'organizations' ? 'empresa(s) sem pessoa cadastrada' : 'pessoa(s)';
+  const noun = kind === 'organizations' ? 'empresa' : 'pessoa';
+  log(`Encontradas ${targets.length} ${unit} com os filtros selecionados.`);
 
   const dueDate = buildDueDate(config);
+  const assignedUsers = [Number(config.assignedUserId)];
+  const type = config.taskType || 'EMAIL';
   let created = 0;
   const errors = [];
 
-  for (const person of people) {
+  for (const target of targets) {
     try {
-      const task = await createPersonTask({
-        personId: person.id,
-        text: config.taskText,
-        dueDate,
-        assignedUsers: [Number(config.assignedUserId)],
-        type: config.taskType || 'EMAIL',
-      });
-      log(`  -> tarefa ${task.id} criada para "${person.name}" (pessoa ${person.id})`);
+      const task =
+        kind === 'organizations'
+          ? await createOrganizationTask({ organizationId: target.id, text: config.taskText, dueDate, assignedUsers, type })
+          : await createPersonTask({ personId: target.id, text: config.taskText, dueDate, assignedUsers, type });
+      log(`  -> tarefa ${task.id} criada para "${target.name}" (${noun} ${target.id})`);
       created += 1;
     } catch (err) {
-      const message = `ERRO ao criar tarefa para "${person.name}" (pessoa ${person.id}): ${err.status ?? ''} ${JSON.stringify(err.body ?? err.message)}`;
+      const message = `ERRO ao criar tarefa para "${target.name}" (${noun} ${target.id}): ${err.status ?? ''} ${JSON.stringify(err.body ?? err.message)}`;
       log(`  -> ${message}`);
       errors.push(message);
     }
   }
 
-  log(`\nConcluído. ${created}/${people.length} tarefa(s) criada(s).`);
+  log(`\nConcluído. ${created}/${targets.length} tarefa(s) criada(s).`);
 
   const state = getState();
   const historyEntry = {
     ranAt: new Date().toISOString(),
     config,
-    matchedCount: people.length,
+    matchedCount: targets.length,
     created,
     errorCount: errors.length,
   };
   const runs = [historyEntry, ...state.runs].slice(0, MAX_HISTORY);
   saveState(meta.id, { runs });
 
-  return { created, matchedCount: people.length, errors, historyEntry };
+  return { created, matchedCount: targets.length, errors, historyEntry };
 }

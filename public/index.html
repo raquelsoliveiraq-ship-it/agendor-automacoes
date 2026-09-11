@@ -28,8 +28,11 @@
             <p id="automation-description" class="description"></p>
           </div>
           <div class="header-actions">
-            <button id="preview-button" class="preview-button" hidden>Pré-visualizar</button>
-            <button id="run-button" class="run-button">Rodar agora</button>
+            <label class="toggle" title="Desligada, a automação não pode ser rodada por ninguém.">
+              <input type="checkbox" id="enabled-toggle" />
+              <span class="toggle-track"><span class="toggle-thumb"></span></span>
+              <span class="toggle-text" id="enabled-toggle-text">Ligada</span>
+            </label>
           </div>
         </header>
 

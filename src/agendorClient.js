@@ -1,6 +1,12 @@
 const BASE_URL = 'https://api.agendor.com.br/v3';
 
-async function request(path, options = {}) {
+const MAX_RETRIES = 3;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// As automações fazem muitos requests seguidos (listar empresas + pessoas), e a
+// tela ainda recalcula a estimativa a cada mexida no filtro. A API às vezes
+// responde 429 — aqui a gente espera e tenta de novo em vez de falhar.
+async function request(path, options = {}, attempt = 1) {
   const token = process.env.AGENDOR_TOKEN;
   if (!token) throw new Error('AGENDOR_TOKEN não definido no .env');
 
@@ -12,6 +18,13 @@ async function request(path, options = {}) {
       ...(options.headers || {}),
     },
   });
+
+  if (res.status === 429 && attempt <= MAX_RETRIES) {
+    const retryAfter = Number(res.headers.get('retry-after'));
+    const waitMs = (Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 2 ** attempt) * 1000;
+    await sleep(waitMs);
+    return request(path, options, attempt + 1);
+  }
 
   const raw = await res.text();
   let body;
@@ -36,6 +49,21 @@ export async function listCategories() {
   return body.data;
 }
 
+export async function listLeadOrigins() {
+  const body = await request('/lead_origins');
+  return body.data;
+}
+
+export async function listSectors() {
+  const body = await request('/sectors');
+  return body.data;
+}
+
+export async function listProducts() {
+  const body = await request('/products');
+  return body.data;
+}
+
 export async function getCurrentUser() {
   const body = await request('/users/me');
   return body.data;
@@ -56,20 +84,55 @@ export async function listOrganizations() {
   return all;
 }
 
-export async function listPeopleByCategory({ categoryId, page = 1, perPage = 100 }) {
-  const body = await request(`/people?category=${categoryId}&page=${page}&per_page=${perPage}`);
+// Filtros de listagem — nomes de parâmetro verificados empiricamente na API
+// (a doc oficial não lista nenhum). O que funciona em /people:
+//   category, organization, userOwner (dono do contato — NÃO `ownerUser`, que é
+//   ignorado em silêncio), leadOrigin, state (UF maiúscula), cityName.
+// Ignorados por /people: sector, products, qualquer filtro de tarefa/data.
+// Vários filtros juntos = interseção (E). Um valor por filtro (CSV dá 400).
+export async function listPeopleByFilters({
+  categoryId,
+  userOwnerId,
+  organizationId,
+  leadOriginId,
+  stateUf,
+  cityName,
+  page = 1,
+  perPage = 100,
+}) {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  if (categoryId) params.set('category', String(categoryId));
+  if (userOwnerId) params.set('userOwner', String(userOwnerId));
+  if (organizationId) params.set('organization', String(organizationId));
+  if (leadOriginId) params.set('leadOrigin', String(leadOriginId));
+  if (stateUf) params.set('state', String(stateUf).toUpperCase());
+  if (cityName) params.set('cityName', String(cityName));
+  const body = await request(`/people?${params.toString()}`);
   return body.data;
 }
 
-// Generic filtered listing. Only `category` and `ownerUser` are confirmed to
-// actually narrow results server-side (verified empirically); other people
-// fields are silently ignored by the API if passed as query params.
-export async function listPeopleByFilters({ categoryId, ownerUserId, organizationId, page = 1, perPage = 100 }) {
+// Filtros de /organizations (verificados): category, leadOrigin, sector,
+// userOwner, state (UF maiúscula), cityName, products. Um valor por filtro.
+export async function listOrganizationsByFilters({
+  categoryId,
+  leadOriginId,
+  sectorId,
+  userOwnerId,
+  stateUf,
+  cityName,
+  productId,
+  page = 1,
+  perPage = 100,
+}) {
   const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
   if (categoryId) params.set('category', String(categoryId));
-  if (ownerUserId) params.set('ownerUser', String(ownerUserId));
-  if (organizationId) params.set('organization', String(organizationId));
-  const body = await request(`/people?${params.toString()}`);
+  if (leadOriginId) params.set('leadOrigin', String(leadOriginId));
+  if (sectorId) params.set('sector', String(sectorId));
+  if (userOwnerId) params.set('userOwner', String(userOwnerId));
+  if (stateUf) params.set('state', String(stateUf).toUpperCase());
+  if (cityName) params.set('cityName', String(cityName));
+  if (productId) params.set('products', String(productId));
+  const body = await request(`/organizations?${params.toString()}`);
   return body.data;
 }
 
@@ -91,11 +154,55 @@ export async function createPersonTask({ personId, text, dueDate, assignedUsers,
   return body.data;
 }
 
+// A API só cria tarefa em pessoa quando a empresa tem contato. Para empresas
+// sem nenhuma pessoa cadastrada, a tarefa vai direto na empresa por esta rota
+// (mesmo shape de payload, mesmo shift de +3h no due_date). Verificado
+// empiricamente em 10/09/2026: POST e DELETE de /organizations/{id}/tasks
+// funcionam igual aos de /people/{id}/tasks.
+export async function createOrganizationTask({ organizationId, text, dueDate, assignedUsers, type }) {
+  const body = await request(`/organizations/${organizationId}/tasks`, {
+    method: 'POST',
+    body: JSON.stringify({ text, due_date: toAgendorDueDate(dueDate), assigned_users: assignedUsers, type }),
+  });
+  return body.data;
+}
+
 export async function updatePersonTask({ personId, taskId, text, dueDate, assignedUsers, type }) {
   const body = await request(`/people/${personId}/tasks/${taskId}`, {
     method: 'PUT',
     body: JSON.stringify({ text, due_date: toAgendorDueDate(dueDate), assigned_users: assignedUsers, type }),
   });
+  return body.data;
+}
+
+export async function listFunnels() {
+  const body = await request('/funnels');
+  return body.data;
+}
+
+export async function listDealStages() {
+  const body = await request('/deal_stages');
+  return body.data;
+}
+
+// Verified empirically: `dealStage` and `dealStatus` (camelCase) do narrow the
+// result server-side; the snake_case variants are silently ignored and return
+// everything. Status ids: 1 = Em andamento, 2 = Ganho, 3 = Perdido.
+export async function listDealsByStage({ dealStageId, dealStatusId, page = 1, perPage = 100 }) {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  if (dealStageId) params.set('dealStage', String(dealStageId));
+  if (dealStatusId) params.set('dealStatus', String(dealStatusId));
+  const body = await request(`/deals?${params.toString()}`);
+  return body.data;
+}
+
+export async function getPerson(personId) {
+  const body = await request(`/people/${personId}`);
+  return body.data;
+}
+
+export async function getOrganization(organizationId) {
+  const body = await request(`/organizations/${organizationId}`);
   return body.data;
 }
 
