@@ -20,11 +20,12 @@ export const meta = {
       label: 'Filtrar por',
       type: 'select',
       options: [
-        { value: 'people', label: 'Categoria de cliente' },
         { value: 'organizations', label: 'Empresa / região' },
+        { value: 'people', label: 'Categoria de cliente' },
       ],
-      default: 'people',
+      default: 'organizations',
       required: true,
+      highlight: true,
     },
     {
       name: 'categoryId',
@@ -61,15 +62,16 @@ export const meta = {
       label: 'Criar tarefa para',
       type: 'select',
       options: [
-        { value: 'people', label: 'Pessoas das empresas filtradas' },
         { value: 'no-people', label: 'Empresas que ainda não têm nenhuma pessoa cadastrada' },
+        { value: 'people', label: 'Pessoas das empresas filtradas' },
       ],
-      default: 'people',
+      default: 'no-people',
       required: true,
+      highlight: true,
       showWhen: { field: 'source', equals: 'organizations' },
     },
-    { name: 'dueDate', label: 'Data de vencimento', type: 'date', required: true },
-    { name: 'dueTime', label: 'Horário', type: 'time', default: '12:00', required: true },
+    { name: 'dueDate', label: 'Data de vencimento', type: 'date', required: true, highlight: true },
+    { name: 'dueTime', label: 'Horário', type: 'time', default: '12:00', required: true, highlight: true },
     {
       name: 'taskType',
       label: 'Tipo de tarefa',
@@ -82,9 +84,17 @@ export const meta = {
       ],
       default: 'EMAIL',
       required: true,
+      highlight: true,
     },
     { name: 'taskText', label: 'Texto da tarefa', type: 'text', required: true },
-    { name: 'assignedUserId', label: 'Atribuir tarefa para', type: 'select', optionsSource: 'users', required: true },
+    {
+      name: 'assignedUserId',
+      label: 'Atribuir tarefa para',
+      type: 'select',
+      optionsSource: 'users',
+      required: true,
+      highlight: true,
+    },
   ],
   canvasTemplate: [
     {
@@ -173,6 +183,7 @@ export async function run({ log = () => {}, config }) {
   const type = config.taskType || 'EMAIL';
   let created = 0;
   const errors = [];
+  const items = [];
 
   for (const target of targets) {
     try {
@@ -182,10 +193,12 @@ export async function run({ log = () => {}, config }) {
           : await createPersonTask({ personId: target.id, text: config.taskText, dueDate, assignedUsers, type });
       log(`  -> tarefa ${task.id} criada para "${target.name}" (${noun} ${target.id})`);
       created += 1;
+      items.push({ taskId: task.id, targetId: target.id, name: target.name, link: target._webUrl || null, ok: true });
     } catch (err) {
       const message = `ERRO ao criar tarefa para "${target.name}" (${noun} ${target.id}): ${err.status ?? ''} ${JSON.stringify(err.body ?? err.message)}`;
       log(`  -> ${message}`);
       errors.push(message);
+      items.push({ targetId: target.id, name: target.name, link: target._webUrl || null, ok: false, error: message });
     }
   }
 
@@ -198,6 +211,7 @@ export async function run({ log = () => {}, config }) {
     matchedCount: targets.length,
     created,
     errorCount: errors.length,
+    items,
   };
   const runs = [historyEntry, ...state.runs].slice(0, MAX_HISTORY);
   saveState(meta.id, { runs });

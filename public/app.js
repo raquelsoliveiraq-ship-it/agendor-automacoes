@@ -559,6 +559,12 @@ function renderConfigForm(automation) {
   form.className = 'config-section';
   const title = automation.meta.formTitle || 'Filtros e dados da tarefa';
   form.innerHTML = `<h2 class="section-title">${title}</h2>`;
+  if (automation.meta.configSchema.some((f) => f.highlight)) {
+    const legend = document.createElement('p');
+    legend.className = 'field-highlight-legend';
+    legend.textContent = '* filtro mais importante (não é obrigatório, só um guia)';
+    form.appendChild(legend);
+  }
   const grid = document.createElement('div');
   grid.className = 'config-form';
   const controllers = controllingFieldNames(automation.meta.configSchema);
@@ -585,6 +591,13 @@ function renderConfigForm(automation) {
       'form-field' + (field.type === 'text' || field.type === 'textarea' ? ' full-width' : '');
     const label = document.createElement('label');
     label.textContent = field.label;
+    if (field.highlight) {
+      const star = document.createElement('span');
+      star.className = 'field-highlight-star';
+      star.title = 'Um dos filtros mais importantes (não obrigatório)';
+      star.textContent = ' *';
+      label.appendChild(star);
+    }
     wrapper.appendChild(label);
 
     let input;
@@ -737,6 +750,7 @@ function renderHistoryTable(runs, meta) {
         <th>Encontradas</th>
         <th>Criadas</th>
         <th>Erros</th>
+        <th></th>
       </tr>
     </thead>
   `;
@@ -768,6 +782,36 @@ function renderHistoryTable(runs, meta) {
       <td>${run.created}</td>
       <td>${run.errorCount || 0}</td>
     `;
+
+    if (!isDrafts) {
+      const toggleTd = document.createElement('td');
+      if (run.items && run.items.length) {
+        const toggleBtn = document.createElement('button');
+        toggleBtn.type = 'button';
+        toggleBtn.className = 'history-detail-toggle';
+        toggleBtn.textContent = 'Ver tarefas';
+        toggleTd.appendChild(toggleBtn);
+
+        const detailTr = document.createElement('tr');
+        detailTr.className = 'history-detail-row';
+        detailTr.hidden = true;
+        const detailTd = document.createElement('td');
+        detailTd.colSpan = 7;
+        detailTd.appendChild(renderHistoryItems(run.items));
+        detailTr.appendChild(detailTd);
+
+        toggleBtn.addEventListener('click', () => {
+          detailTr.hidden = !detailTr.hidden;
+          toggleBtn.textContent = detailTr.hidden ? 'Ver tarefas' : 'Esconder';
+        });
+
+        tbody.appendChild(tr);
+        tr.appendChild(toggleTd);
+        tbody.appendChild(detailTr);
+        continue;
+      }
+      tr.appendChild(toggleTd);
+    }
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
@@ -782,6 +826,38 @@ function renderHistoryTable(runs, meta) {
   }
 
   return section;
+}
+
+function renderHistoryItems(items) {
+  const list = document.createElement('ul');
+  list.className = 'history-detail-list';
+  for (const item of items) {
+    const li = document.createElement('li');
+    li.className = item.ok ? 'history-detail-ok' : 'history-detail-error';
+
+    const name = document.createElement('span');
+    name.textContent = item.name;
+    li.appendChild(name);
+
+    if (item.link) {
+      const link = document.createElement('a');
+      link.href = item.link;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = 'Ver no Agendor';
+      li.appendChild(link);
+    }
+
+    if (!item.ok) {
+      const err = document.createElement('span');
+      err.className = 'history-detail-error-msg';
+      err.textContent = item.error;
+      li.appendChild(err);
+    }
+
+    list.appendChild(li);
+  }
+  return list;
 }
 
 function labelForHistorical(field, value) {
