@@ -59,37 +59,33 @@ lateral mostra só as duas automações e ambas abrem sem erro.
 
 ---
 
-### 3.2 Trocar persistência de arquivo → Vercel KV (com fallback local)
+### 3.2 Trocar persistência de arquivo → Vercel KV (com fallback local) ✅ FEITO (11/09/2026)
 
 A ideia: um adaptador único que usa o KV quando as variáveis dele existem
 (ambiente Vercel) e cai no arquivo `.state/` quando não existem (dev local sem
 Redis). Assim o `npm run dashboard` continua funcionando sem configurar nada.
 
-- [ ] `npm install @vercel/kv` (ou `@upstash/redis` — ver nota no fim da seção).
-- [ ] Criar `src/storage.js` com duas funções genéricas:
-  - `readJSON(key, fallback)` → objeto
-  - `writeJSON(key, value)` → void
-  - Dentro: se `process.env.KV_REST_API_URL` existir, usa o KV; senão,
-    lê/grava `.state/<key>.json` (comportamento de hoje).
-  - **Ambas assíncronas.**
-- [ ] Reescrever os três stores por cima de `src/storage.js`:
-  - `stateStore.js`: `loadState(id)` → `readJSON('state:'+id, default)`;
-    `saveState(id, s)` → `writeJSON('state:'+id, s)`. **Viram async.**
-  - `settingsStore.js`: chave `settings`. `getAutomationSettings` e
-    `setAutomationEnabled` **viram async**.
-  - `templateStore.js`: chave `templates`. `listTemplates`, `saveTemplate`,
-    `deleteTemplate` **viram async**.
-- [ ] Propagar o `await` (o compilador não avisa — é preciso caçar cada chamada):
-  - `src/automations/emailDrafts.js`: `getState()` vira `async`; dentro de
-    `run()` trocar `const state = getState()` por `await getState()`.
-  - `src/automations/bulkTasksByFilter.js`: idem.
-  - `src/automations/index.js`: o `/api/automations` monta a lista chamando
-    `getState()` e `getAutomationSettings()` — passar para
-    `await Promise.all(automations.map(async (a) => ({...})))`.
-  - `src/server.js`: `await` em todos os handlers que tocam os stores
-    (`/api/automations`, `PUT .../enabled`, os quatro de `/templates`,
-    `/run`). Todos os handlers já são `async` ou podem virar.
-- [ ] `.gitignore` mantém `.state/` ignorado (continua sendo o fallback local).
+- [x] `npm install @upstash/redis` (a API REST da Vercel KV é compatível com a
+      do Upstash — um cliente só serve para os dois pares de variáveis).
+- [x] Criado `src/storage.js` com `readJSON(key, fallback)` / `writeJSON(key,
+      value)`, ambas assíncronas. Usa Redis quando `KV_REST_API_URL` ou
+      `UPSTASH_REDIS_REST_URL` existir; senão lê/grava `.state/<nome>.json` —
+      o prefixo `state:` das chaves (necessário no KV, que é um espaço só) é
+      removido do nome do arquivo local, para os arquivos ficarem com o mesmo
+      nome de antes e não perder o histórico já salvo em disco.
+- [x] `stateStore.js`, `settingsStore.js`, `templateStore.js` reescritos por
+      cima de `storage.js`, todos async.
+- [x] `await` propagado em `emailDrafts.js`, `bulkTasksByFilter.js`, e em
+      **`optionsCache.js`** (não estava nesta lista original, mas também
+      chamava `loadState`/`saveState` direto — corrigido).
+- [x] `src/app.js` (novo, ver 3.3) já nasce com `await` em todos os handlers
+      que tocam os stores.
+- [x] `.gitignore` mantém `.state/` ignorado.
+
+**Testado local (sem variável de KV):** `npm run dashboard` continua lendo os
+arquivos `.state/*.json` de antes — histórico, modelos e liga/desliga
+sobreviveram à troca. Sem teste ainda com um banco Upstash de verdade
+conectado (só acontece depois do passo 4.3).
 
 **Chaves no KV:**
 
@@ -113,52 +109,40 @@ página, conferir que rascunhos/histórico/modelos persistem.
 
 ---
 
-### 3.3 Porta de entrada serverless
+### 3.3 Porta de entrada serverless ✅ FEITO (11/09/2026)
 
-- [ ] Extrair o app do `src/server.js` para `src/app.js`:
-  - `src/app.js` monta o Express (`express()`, `app.use`, todas as rotas) e faz
-    `export default app`. **Sem `app.listen`.**
-  - `src/server.js` passa a ser só: `import app from './app.js'` +
-    `app.listen(PORT, ...)` + a mensagem de porta ocupada. É o entrypoint local
-    (`npm run dashboard`).
-- [ ] Criar `api/index.js` na raiz:
-  ```js
-  import app from '../src/app.js';
-  export default app;
-  ```
-- [ ] Criar `vercel.json` na raiz:
-  ```json
-  {
-    "functions": { "api/index.js": { "maxDuration": 60 } },
-    "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
-  }
-  ```
-  Todo o tráfego (inclusive `index.html`, `styles.css`, `app.js`, `canvas.js`)
-  passa pelo Express — que já serve `public/` via `express.static`. Isso deixa a
-  senha (3.4) proteger tudo, não só a API.
-- [ ] `package.json`: adicionar `"engines": { "node": ">=18" }`. Não precisa de
-      script de build — não há build.
+- [x] Extraído o app do `src/server.js` para `src/app.js` — monta o Express e
+      todas as rotas, `export default app`, sem `app.listen`.
+- [x] `src/server.js` virou só o entrypoint local: `import app from
+      './app.js'` + `app.listen(PORT, ...)` + a mensagem de porta ocupada.
+- [x] Criado `api/index.js` na raiz (`import app from '../src/app.js'; export
+      default app;`).
+- [x] Criado `vercel.json` na raiz com `maxDuration: 60` e o rewrite
+      `/(.*) → /api/index` — todo o tráfego passa pelo Express (que já serve
+      `public/`), então a senha (3.4) protege tudo.
+- [x] `package.json`: `"engines": { "node": ">=18" }` adicionado.
 
-**Teste:** `npx vercel dev` (simula o ambiente da Vercel localmente) e abrir a
-URL que ele imprime. Tudo deve funcionar como no `npm run dashboard`.
+**Teste feito:** `npm run dashboard` continua igual (o `server.js` novo só
+importa `app.js`). **Não testado ainda com `npx vercel dev`** — exigiria login
+na Vercel CLI, que é ação de conta e fica para quando a Raquel/Plínio forem
+fazer o deploy de verdade (seção 4).
 
 ---
 
-### 3.4 Senha compartilhada (HTTP Basic Auth)
+### 3.4 Senha compartilhada (HTTP Basic Auth) ✅ FEITO (11/09/2026)
 
-- [ ] Middleware em `src/app.js`, **antes de todas as rotas**:
-  - Lê o header `Authorization: Basic ...`.
-  - Compara com `process.env.DASHBOARD_USER` (default `equipe`) e
-    `process.env.DASHBOARD_PASSWORD`.
-  - Sem `DASHBOARD_PASSWORD` definida → libera tudo (dev local).
-  - Senha errada → `401` com `WWW-Authenticate: Basic realm="Automações Agendor"`
-    (o navegador mostra o popup nativo de login).
-  - Comparar com `crypto.timingSafeEqual` para não vazar timing.
-- [ ] Sem dependência nova — dá para fazer com o `Buffer` e `crypto` nativos.
+- [x] Middleware em `src/app.js`, antes de todas as rotas: lê `Authorization:
+      Basic ...`, compara usuário (`DASHBOARD_USER`, default `equipe`) e senha
+      (`DASHBOARD_PASSWORD`) com `crypto.timingSafeEqual`. Sem
+      `DASHBOARD_PASSWORD` definida → libera tudo (dev local, sem configurar
+      nada). Senha errada/faltando → `401` com `WWW-Authenticate: Basic` (o
+      navegador mostra o popup nativo).
+- [x] Sem dependência nova — só `Buffer` e `crypto` nativos.
 
-**Teste:** com `DASHBOARD_PASSWORD` setada, abrir a URL → navegador pede
-usuário/senha. Senha errada barra; certa entra e fica salva na sessão do
-navegador.
+**Testado (11/09/2026):** instância temporária numa porta separada com
+`DASHBOARD_PASSWORD` setada — sem credencial: 401; senha errada: 401; senha
+certa: 200. Servidor principal (sem a variável) continuou liberado, sem pedir
+senha.
 
 ---
 
@@ -317,9 +301,14 @@ no `main`.
 | `vercel.json` | **novo** — `maxDuration` + rewrites |
 | `src/automations/emailDrafts.js` | `await` nos stores |
 | `src/automations/bulkTasksByFilter.js` | `await` nos stores |
-| `src/automations/peopleQuery.js` | `await` nos stores (se algum dia guardar estado — hoje não guarda) |
+| `src/optionsCache.js` | `await` nos stores (não estava previsto, achado ao testar) |
 | `src/server.js` handlers → `src/app.js` | `await` nos stores |
-| `README.md` | tira automação 2, adiciona seção Vercel |
+| `README.md` | tira automação 2, adiciona seção Vercel — **ainda falta** |
+
+Tudo acima está **feito e testado localmente** (11/09/2026). Falta: `README.md`
+e a seção 4 inteira (conta na Vercel, banco, variáveis de ambiente, deploy) —
+essa parte só a Raquel/Plínio conseguem fazer, porque envolve login na Vercel
+e digitar o token do Agendor e a senha escolhida direto no painel deles.
 
 > Filtros por empresa/região (`peopleQuery.js`, `listOrganizationsByFilters`
 > etc.) já entraram — ver `filtros-agendor.md`.

@@ -1,32 +1,20 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readJSON, writeJSON } from './storage.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SETTINGS_FILE = path.join(__dirname, '..', '.state', 'settings.json');
-
-// Liga/desliga por automação, num arquivo só, separado do estado de execução de
-// cada uma. Fica aqui isolado porque na fase de servidor compartilhado este é o
-// único pedaço que precisa sair do disco e ir para o banco.
-function loadAll() {
-  if (!fs.existsSync(SETTINGS_FILE)) return { automations: {} };
-  try {
-    const parsed = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
-    return { automations: parsed.automations || {} };
-  } catch {
-    return { automations: {} };
-  }
+// Liga/desliga por automação, num registro só, separado do estado de execução
+// de cada uma.
+async function loadAll() {
+  const parsed = await readJSON('settings', { automations: {} });
+  return { automations: parsed.automations || {} };
 }
 
-function saveAll(settings) {
-  fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+async function saveAll(settings) {
+  await writeJSON('settings', settings);
 }
 
 // Automação sem registro nenhum começa ligada, para não deixar o dashboard
 // mudo numa instalação nova.
-export function getAutomationSettings(automationId) {
-  const entry = loadAll().automations[automationId];
+export async function getAutomationSettings(automationId) {
+  const entry = (await loadAll()).automations[automationId];
   return {
     enabled: entry?.enabled !== false,
     changedAt: entry?.changedAt ?? null,
@@ -34,13 +22,13 @@ export function getAutomationSettings(automationId) {
   };
 }
 
-export function setAutomationEnabled(automationId, enabled, changedBy = null) {
-  const settings = loadAll();
+export async function setAutomationEnabled(automationId, enabled, changedBy = null) {
+  const settings = await loadAll();
   settings.automations[automationId] = {
     enabled: Boolean(enabled),
     changedAt: new Date().toISOString(),
     changedBy,
   };
-  saveAll(settings);
+  await saveAll(settings);
   return getAutomationSettings(automationId);
 }

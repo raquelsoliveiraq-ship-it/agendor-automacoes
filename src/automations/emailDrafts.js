@@ -340,7 +340,7 @@ function validate(config) {
   }
 }
 
-export function getState() {
+export async function getState() {
   return loadState(meta.id, { runs: [] });
 }
 
@@ -380,7 +380,7 @@ export async function run({ log = () => {}, config }) {
 
   log(`\nConcluído. ${drafts.length} rascunho(s) montado(s). Nada foi enviado.`);
 
-  const state = getState();
+  const state = await getState();
   const ranAt = new Date().toISOString();
   const historyEntry = {
     ranAt,
@@ -394,7 +394,7 @@ export async function run({ log = () => {}, config }) {
   // ficam só na tela desta sessão: ao recarregar a página eles somem, e é
   // preciso rodar de novo. Assim ninguém abre o dashboard e vê rascunhos de
   // dias atrás achando que são de agora.
-  saveState(meta.id, {
+  await saveState(meta.id, {
     runs: [historyEntry, ...state.runs].slice(0, MAX_HISTORY),
   });
 

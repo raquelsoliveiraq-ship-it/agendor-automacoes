@@ -155,7 +155,7 @@ function buildDueDate(config) {
   return new Date(`${config.dueDate}T${config.dueTime}:00-03:00`);
 }
 
-export function getState() {
+export async function getState() {
   return loadState(meta.id, { runs: [] });
 }
 
@@ -204,7 +204,7 @@ export async function run({ log = () => {}, config }) {
 
   log(`\nConcluído. ${created}/${targets.length} tarefa(s) criada(s).`);
 
-  const state = getState();
+  const state = await getState();
   const historyEntry = {
     ranAt: new Date().toISOString(),
     config,
@@ -214,7 +214,7 @@ export async function run({ log = () => {}, config }) {
     items,
   };
   const runs = [historyEntry, ...state.runs].slice(0, MAX_HISTORY);
-  saveState(meta.id, { runs });
+  await saveState(meta.id, { runs });
 
   return { created, matchedCount: targets.length, errors, historyEntry };
 }
