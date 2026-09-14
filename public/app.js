@@ -921,6 +921,33 @@ function renderAccountBar(section) {
   return input;
 }
 
+// CSV pra mala direta (Planilhas Google + YAMM, ou Mesclagem de e-mails do
+// Gmail com merge tags {{Assunto}}/{{Corpo}}). BOM no início pro Excel/Sheets
+// reconhecerem acentuação UTF-8 direito.
+function csvEscape(value) {
+  const str = String(value ?? '');
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+function draftsToCsv(drafts) {
+  const header = ['Nome', 'E-mail', 'Assunto', 'Corpo'];
+  const rows = drafts.map((d) => [d.contactName, d.email, d.subject, d.body].map(csvEscape).join(','));
+  return [header.join(','), ...rows].join('\r\n');
+}
+
+function downloadDraftsCsv(drafts) {
+  const csv = '﻿' + draftsToCsv(drafts);
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `rascunhos-email-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function renderDrafts(result) {
   const section = document.createElement('section');
   section.className = 'drafts-section';
@@ -947,6 +974,15 @@ function renderDrafts(result) {
     when.className = 'placeholder-hint';
     when.textContent = `Gerados em ${formatDate(result.ranAt)}. Somem ao recarregar a página — rode de novo para gerar outra vez.`;
     section.appendChild(when);
+  }
+
+  if (drafts.length) {
+    const exportBtn = document.createElement('button');
+    exportBtn.type = 'button';
+    exportBtn.className = 'primary';
+    exportBtn.textContent = 'Exportar CSV (mala direta)';
+    exportBtn.addEventListener('click', () => downloadDraftsCsv(drafts));
+    section.appendChild(exportBtn);
   }
 
   const accountInput = drafts.length ? renderAccountBar(section) : null;
