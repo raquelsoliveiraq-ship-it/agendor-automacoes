@@ -8,6 +8,8 @@
   --text: #16233b;
   --text-muted: #5b6b85;
   --border: #dbe6fa;
+  --green-600: #1f8a4c;
+  --green-50: #f2faf5;
 }
 
 * {
@@ -696,6 +698,17 @@ details.canvas-section:not([open]) > summary.section-title {
   background: var(--white);
 }
 
+.draft-card--done {
+  border-color: var(--green-600);
+  background: var(--green-50);
+}
+
+.draft-done-badge {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--green-600);
+}
+
 .draft-head {
   display: flex;
   justify-content: space-between;
@@ -836,37 +849,6 @@ textarea.body-template {
 .account-hint {
   font-size: 0.78rem;
   color: var(--text-muted);
-}
-
-.account-confirm {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--blue-600);
-  border-radius: 8px;
-  background: var(--blue-50);
-  font-size: 0.84rem;
-}
-
-.account-confirm button {
-  font-size: 0.82rem;
-  font-weight: 600;
-  border-radius: 7px;
-  padding: 6px 11px;
-  border: 1px solid var(--border);
-  background: var(--white);
-  color: var(--blue-700);
-  cursor: pointer;
-  font-family: inherit;
-}
-
-.account-confirm button.primary {
-  background: var(--blue-600);
-  border-color: var(--blue-600);
-  color: var(--white);
 }
 
 /* Modelos de e-mail — botão que abre um menu no estilo do Agendor */

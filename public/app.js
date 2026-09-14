@@ -985,7 +985,7 @@ function renderDrafts(result) {
     section.appendChild(exportBtn);
   }
 
-  const accountInput = drafts.length ? renderAccountBar(section) : null;
+  if (drafts.length) renderAccountBar(section);
 
   if (drafts.length === 0) {
     const p = document.createElement('p');
@@ -1031,7 +1031,7 @@ function renderDrafts(result) {
     gmailButton.type = 'button';
     gmailButton.className = 'primary';
     gmailButton.textContent = 'Abrir no Gmail';
-    gmailButton.addEventListener('click', () => confirmAccountThenOpen(card, draft, accountInput));
+    gmailButton.addEventListener('click', () => openInGmail(card, draft));
     actions.appendChild(gmailButton);
 
     const feedback = document.createElement('span');
@@ -1098,51 +1098,23 @@ function renderDrafts(result) {
   return section;
 }
 
-// Pergunta em qual conta abrir antes de mandar para o Gmail: quem está logado
-// em mais de uma conta corre o risco de escrever pelo endereço errado, e o
-// e-mail já sai enviado antes de perceber.
-function confirmAccountThenOpen(card, draft, accountInput) {
-  const existing = card.querySelector('.account-confirm');
-  if (existing) existing.remove();
-
+// Abre direto, sem confirmar a conta a cada clique — a conta é a que estiver
+// no campo "Abrir na conta do Gmail" no topo da lista (ela já avisa ali, uma
+// vez só, se nenhuma estiver escolhida). Marca o card como aberto, pra dar
+// pra acompanhar visualmente quais dos rascunhos já foram tratados.
+function openInGmail(card, draft) {
   const account = getGmailAccount();
-  const box = document.createElement('div');
-  box.className = 'account-confirm';
+  window.open(gmailUrlForAccount(draft.gmailUrl, account), '_blank', 'noopener');
+  markDraftOpened(card);
+}
 
-  const question = document.createElement('span');
-  question.textContent = account
-    ? `Abrir este rascunho na conta ${account}?`
-    : 'Nenhuma conta escolhida: o Gmail vai abrir na conta padrão deste navegador.';
-  box.appendChild(question);
-
-  const confirmBtn = document.createElement('button');
-  confirmBtn.type = 'button';
-  confirmBtn.className = 'primary';
-  confirmBtn.textContent = account ? 'Abrir' : 'Abrir assim mesmo';
-  confirmBtn.addEventListener('click', () => {
-    window.open(gmailUrlForAccount(draft.gmailUrl, account), '_blank', 'noopener');
-    box.remove();
-  });
-
-  const changeBtn = document.createElement('button');
-  changeBtn.type = 'button';
-  changeBtn.textContent = account ? 'Trocar conta' : 'Escolher conta';
-  changeBtn.addEventListener('click', () => {
-    box.remove();
-    if (accountInput) {
-      accountInput.focus();
-      accountInput.select();
-    }
-  });
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.textContent = 'Cancelar';
-  cancelBtn.addEventListener('click', () => box.remove());
-
-  box.append(confirmBtn, changeBtn, cancelBtn);
-  card.appendChild(box);
-  confirmBtn.focus();
+function markDraftOpened(card) {
+  card.classList.add('draft-card--done');
+  if (card.querySelector('.draft-done-badge')) return;
+  const badge = document.createElement('span');
+  badge.className = 'draft-done-badge';
+  badge.textContent = '✓ Aberto';
+  card.querySelector('.draft-actions').appendChild(badge);
 }
 
 async function copyToClipboard(text, feedbackEl, successMessage) {
