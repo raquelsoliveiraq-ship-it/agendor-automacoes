@@ -10,6 +10,10 @@
   --border: #dbe6fa;
   --green-600: #1f8a4c;
   --green-50: #f2faf5;
+  --red-900: #7a1710;
+  --red-700: #b42318;
+  --red-600: #d92d20;
+  --red-100: #fde8e6;
 }
 
 * {
@@ -139,6 +143,20 @@ body {
   cursor: default;
 }
 
+/* Automação destrutiva (apagar em massa): vermelho em vez de azul, pra não
+   parecer um "Rodar agora" comum. */
+.run-button.is-danger {
+  background: var(--red-600);
+}
+
+.run-button.is-danger:hover {
+  background: var(--red-700);
+}
+
+.run-button.is-danger:disabled {
+  background: #f3aca6;
+}
+
 /* Enquanto a rodada não termina: bolinha branca girando antes do texto. */
 .run-button.is-running::before {
   content: '';
@@ -225,7 +243,7 @@ body {
 .preview-result {
   grid-column: 1 / -1;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   background: var(--blue-100);
   border: 1px solid var(--border);
@@ -237,8 +255,27 @@ body {
   color: var(--blue-900);
 }
 
+/* Cada aviso (estimativa, dica de filtro, quantos ficam de fora) vem numa
+   linha própria (formatEstimate junta com \n) para não virar um parágrafo
+   corrido difícil de escanear. */
+.preview-text {
+  white-space: pre-line;
+}
+
 .preview-result[hidden] {
   display: none;
+}
+
+/* Estimativa de uma automação destrutiva (apagar em massa): vermelho, pra
+   destacar que essa lista é a última chance de conferir antes de rodar. */
+.preview-result.is-danger {
+  background: var(--red-100);
+  color: var(--red-900);
+}
+
+.preview-result.is-danger .preview-spinner {
+  border-color: rgba(122, 23, 16, 0.25);
+  border-top-color: var(--red-700);
 }
 
 .preview-spinner {
@@ -246,6 +283,7 @@ body {
   flex: none;
   width: 16px;
   height: 16px;
+  margin-top: 3px;
   border: 2px solid rgba(11, 47, 107, 0.25);
   border-top-color: var(--blue-700);
   border-radius: 50%;
@@ -367,6 +405,11 @@ body {
 .history-detail-error-msg {
   font-size: 0.68rem;
   color: #b42318;
+}
+
+.history-detail-skipped-msg {
+  font-size: 0.68rem;
+  color: #b45309;
 }
 
 .loading-hint {

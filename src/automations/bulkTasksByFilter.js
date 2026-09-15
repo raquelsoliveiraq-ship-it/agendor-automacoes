@@ -14,6 +14,11 @@ export const meta = {
   description:
     'Cria uma tarefa igual para todas as pessoas que casam com os filtros escolhidos (por categoria de cliente ou por empresa/região), numa data específica. No modo empresa também dá para criar a tarefa nas empresas que ainda não têm nenhuma pessoa cadastrada — útil para ir atrás do responsável.',
   configurable: true,
+  howItWorks: [
+    'Quando o tipo é "E-mail", quem não tem e-mail cadastrado (nem na pessoa, nem na empresa) fica de fora: a tarefa não é criada para eles e eles aparecem separados no resultado e no histórico.',
+    'Quando o tipo é "Ligação", vale a mesma regra pra quem não tem telefone cadastrado (comercial, celular ou WhatsApp — fax e ramal não contam).',
+    'Reunião e Visita não têm essa checagem — todo mundo que casa com o filtro recebe a tarefa.',
+  ],
   configSchema: [
     {
       name: 'source',
@@ -28,6 +33,11 @@ export const meta = {
       highlight: true,
     },
     {
+      // Categoria é cadastrada separadamente na empresa e na pessoa, e podem
+      // divergir (ex.: empresa "Cliente efetivo" com uma pessoa dela marcada
+      // "Contato Sesc"). Em "Empresa / região" esse filtro olha a categoria da
+      // EMPRESA, então uma pessoa com a categoria certa pode ficar de fora se
+      // a empresa dela tiver outra.
       name: 'categoryId',
       label: 'Categoria',
       type: 'select',
@@ -35,6 +45,7 @@ export const meta = {
       allowEmpty: true,
       emptyLabel: 'Qualquer categoria',
       showWhen: { field: 'source', in: ['people', 'organizations'] },
+      hint: 'Em "Empresa / região" filtra a categoria da EMPRESA, não da pessoa — se a pessoa e a empresa dela tiverem categorias diferentes, use "Categoria de cliente" pra filtrar pela categoria da pessoa.',
     },
     {
       name: 'ownerUserId',
@@ -43,6 +54,26 @@ export const meta = {
       optionsSource: 'users',
       allowEmpty: true,
       emptyLabel: 'Qualquer responsável',
+      showWhen: { field: 'source', in: ['people', 'organizations'] },
+    },
+    {
+      // Cargo é texto livre no cadastro (105 variações na conta), mas a API
+      // casa `role` por prefixo/substring — então "Analista Cultura" pega
+      // também "Analista Cultura (Teatro)", "Analista Cultura (Música)" etc.
+      // Lista fixa com os cargos SESC que a Raquel usa pra filtrar (sem
+      // endpoint de cargos na API, igual à Cidade).
+      name: 'role',
+      label: 'Cargo',
+      type: 'select',
+      options: [
+        { value: 'Analista Cultura', label: 'Analista Cultura' },
+        { value: 'Analista Ambiental', label: 'Analista Ambiental' },
+        { value: 'Analista Educação', label: 'Analista Educação' },
+        { value: 'Analista Social', label: 'Analista Social' },
+        { value: 'Analista Saúde', label: 'Analista Saúde' },
+      ],
+      allowEmpty: true,
+      emptyLabel: 'Qualquer cargo',
       showWhen: { field: 'source', in: ['people', 'organizations'] },
     },
     {
@@ -101,7 +132,7 @@ export const meta = {
       label: 'Filtro',
       title: 'Pessoas que casam com',
       detailTemplate:
-        'Fonte: {source} · Alvo: {orgTarget} · Categoria: {categoryId} · Responsável: {ownerUserId} · Empresa: {organizationId} · ' +
+        'Fonte: {source} · Alvo: {orgTarget} · Categoria: {categoryId} · Cargo: {role} · Responsável: {ownerUserId} · Empresa: {organizationId} · ' +
         'Origem: {leadOriginId} · Setor: {sectorId} · Estado: {stateUf} · Cidade: {cityName} · Produto: {productId}',
     },
     {
@@ -155,16 +186,57 @@ function buildDueDate(config) {
   return new Date(`${config.dueDate}T${config.dueTime}:00-03:00`);
 }
 
+// Mesma regra de e-mail usada nos rascunhos (peopleQuery.js): contato/empresa
+// tem e-mail quando `contact.email` (pessoa) ou `email` (fallback/empresa)
+// está preenchido.
+function hasEmail(target) {
+  return Boolean(target.contact?.email || target.email);
+}
+
+// Telefone: qualquer um dos três campos de telefone do `contact` conta
+// (comercial, celular ou WhatsApp). Fax/ramal/rádio não contam — não dá pra
+// ligar neles.
+function hasPhone(target) {
+  const c = target.contact;
+  return Boolean(c?.work || c?.mobile || c?.whatsapp);
+}
+
+// Só esses dois tipos de tarefa exigem um jeito específico de contato pra
+// fazer sentido (sem e-mail não tem pra onde mandar; sem telefone não tem pra
+// onde ligar). Reunião e Visita são presenciais e não entram aqui.
+const REQUIRED_CONTACT_BY_TASK_TYPE = {
+  EMAIL: { check: hasEmail, label: 'e-mail' },
+  LIGACAO: { check: hasPhone, label: 'telefone' },
+};
+
+// Separa quem entra na criação (tem o contato exigido pelo tipo de tarefa) de
+// quem fica de fora, e por quê. Tipos sem regra (Reunião, Visita) não filtram
+// nada — todo mundo casa.
+function splitByRequiredContact(config, targets) {
+  const rule = REQUIRED_CONTACT_BY_TASK_TYPE[config.taskType];
+  if (!rule) return { ready: targets, missing: [], label: null };
+  return {
+    ready: targets.filter(rule.check),
+    missing: targets.filter((t) => !rule.check(t)),
+    label: rule.label,
+  };
+}
+
 export async function getState() {
   return loadState(meta.id, { runs: [] });
 }
 
 export async function preview(config) {
   const { kind, targets } = await collectTargets(config);
+  const { ready, missing, label } = splitByRequiredContact(config, targets);
   return {
     matchedCount: targets.length,
     kind,
     sample: targets.slice(0, 10).map((t) => t.name),
+    missingCount: label ? missing.length : undefined,
+    missingLabel: label,
+    missing: label ? missing.slice(0, 20).map((t) => ({ name: t.name, link: t._webUrl || null })) : undefined,
+    readyCount: label ? ready.length : undefined,
   };
 }
 
@@ -178,6 +250,11 @@ export async function run({ log = () => {}, config }) {
   const noun = kind === 'organizations' ? 'empresa' : 'pessoa';
   log(`Encontradas ${targets.length} ${unit} com os filtros selecionados.`);
 
+  const { ready, missing, label } = splitByRequiredContact(config, targets);
+  if (label && missing.length) {
+    log(`${missing.length} sem ${label} cadastrado — não vão receber tarefa.`);
+  }
+
   const dueDate = buildDueDate(config);
   const assignedUsers = [Number(config.assignedUserId)];
   const type = config.taskType || 'EMAIL';
@@ -185,7 +262,13 @@ export async function run({ log = () => {}, config }) {
   const errors = [];
   const items = [];
 
-  for (const target of targets) {
+  for (const target of missing) {
+    const message = `SEM ${label.toUpperCase()}: "${target.name}" (${noun} ${target.id}) não tem ${label} cadastrado — tarefa não criada.`;
+    log(`  -> ${message}`);
+    items.push({ targetId: target.id, name: target.name, link: target._webUrl || null, ok: false, skipped: true, error: message });
+  }
+
+  for (const target of ready) {
     try {
       const task =
         kind === 'organizations'
@@ -211,6 +294,8 @@ export async function run({ log = () => {}, config }) {
     matchedCount: targets.length,
     created,
     errorCount: errors.length,
+    skippedCount: missing.length,
+    skippedLabel: label,
     items,
   };
   const runs = [historyEntry, ...state.runs].slice(0, MAX_HISTORY);

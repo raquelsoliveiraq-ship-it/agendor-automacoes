@@ -87,7 +87,9 @@ export async function listOrganizations() {
 // Filtros de listagem — nomes de parâmetro verificados empiricamente na API
 // (a doc oficial não lista nenhum). O que funciona em /people:
 //   category, organization, userOwner (dono do contato — NÃO `ownerUser`, que é
-//   ignorado em silêncio), leadOrigin, state (UF maiúscula), cityName.
+//   ignorado em silêncio), leadOrigin, state (UF maiúscula), cityName, role
+//   (cargo — casa por prefixo/substring, não precisa ser o texto exato; ex.:
+//   role=Analista Cultura pega também "Analista Cultura (Teatro)" etc.).
 // Ignorados por /people: sector, products, qualquer filtro de tarefa/data.
 // Vários filtros juntos = interseção (E). Um valor por filtro (CSV dá 400).
 export async function listPeopleByFilters({
@@ -97,6 +99,7 @@ export async function listPeopleByFilters({
   leadOriginId,
   stateUf,
   cityName,
+  role,
   page = 1,
   perPage = 100,
 }) {
@@ -107,6 +110,7 @@ export async function listPeopleByFilters({
   if (leadOriginId) params.set('leadOrigin', String(leadOriginId));
   if (stateUf) params.set('state', String(stateUf).toUpperCase());
   if (cityName) params.set('cityName', String(cityName));
+  if (role) params.set('role', String(role));
   const body = await request(`/people?${params.toString()}`);
   return body.data;
 }
@@ -172,6 +176,49 @@ export async function updatePersonTask({ personId, taskId, text, dueDate, assign
     method: 'PUT',
     body: JSON.stringify({ text, due_date: toAgendorDueDate(dueDate), assigned_users: assignedUsers, type }),
   });
+  return body.data;
+}
+
+// Testado 15/09/2026: o PUT em tarefa de empresa funciona igual ao de pessoa
+// (mesmo payload, mesmo shift de +3h) — a API não documenta essa rota, mas
+// segue o mesmo par create/update/delete das outras duas.
+export async function updateOrganizationTask({ organizationId, taskId, text, dueDate, assignedUsers, type }) {
+  const body = await request(`/organizations/${organizationId}/tasks/${taskId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ text, due_date: toAgendorDueDate(dueDate), assigned_users: assignedUsers, type }),
+  });
+  return body.data;
+}
+
+// Testado 15/09/2026: as duas rotas de DELETE funcionam (tarefa em pessoa e
+// tarefa direto na empresa, mesmo par de rotas do create).
+export async function deletePersonTask({ personId, taskId }) {
+  const body = await request(`/people/${personId}/tasks/${taskId}`, { method: 'DELETE' });
+  return body.data;
+}
+
+export async function deleteOrganizationTask({ organizationId, taskId }) {
+  const body = await request(`/organizations/${organizationId}/tasks/${taskId}`, { method: 'DELETE' });
+  return body.data;
+}
+
+// `/tasks` é um endpoint separado de listagem (sem doc oficial, achado
+// 15/09/2026): junta tarefas de pessoa E de empresa, mas só filtra de verdade
+// por data — `type`/`assignedUser` são ignorados em silêncio (mesmo padrão de
+// /people e /organizations). `createdDateGt` sozinho tem limite de 31 dias
+// pra trás; `dueDateGt` + `dueDateLt` juntos NÃO têm esse limite e dão pra
+// isolar um dia exato de vencimento (testado com datas em 2025 e no fim de
+// 2026, sem erro). Cada item vem com `organization` OU `person` (nunca os
+// dois), e o `type` volta capitalizado em PT-BR ("Email", "Ligação",
+// "Reunião", "Visita" — não o código que a gente manda pra criar).
+export async function listTasksByDueRange({ dueDateGtISO, dueDateLtISO, page = 1, perPage = 100 }) {
+  const params = new URLSearchParams({
+    dueDateGt: dueDateGtISO,
+    dueDateLt: dueDateLtISO,
+    page: String(page),
+    per_page: String(perPage),
+  });
+  const body = await request(`/tasks?${params.toString()}`);
   return body.data;
 }
 

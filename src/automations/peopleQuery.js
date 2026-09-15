@@ -41,6 +41,7 @@ export async function collectContacts(config, { maxPages, orgRecipient = 'contac
         categoryId: config.categoryId,
         userOwnerId: config.ownerUserId,
         organizationId: config.organizationId,
+        role: config.role,
       },
       maxPages
     );
@@ -55,7 +56,7 @@ export async function collectContacts(config, { maxPages, orgRecipient = 'contac
   let people = [];
   if (orgRecipient !== 'company') {
     const orgIds = new Set(orgs.map((o) => o.id));
-    const allPeople = await paginatePeople({}, maxPages);
+    const allPeople = await paginatePeople({ role: config.role }, maxPages);
     people = allPeople.filter((p) => p.organization && orgIds.has(p.organization.id));
   }
 

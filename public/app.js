@@ -223,11 +223,11 @@ function controllingFieldNames(configSchema) {
 
 // Campos que mudam a contagem de contatos: quando um deles muda, vale recalcular
 // a estimativa. Assunto/corpo/dados da tarefa não mexem em quem casa com o
-// filtro, então não disparam nada.
+// filtro, então não disparam nada. `taskType` é exceção: não muda quem casa
+// com o filtro, mas muda quantos têm e-mail (só conta pra tarefa de e-mail).
 const NON_FILTER_FIELDS = new Set([
   'subjectTemplate',
   'bodyTemplate',
-  'taskType',
   'taskText',
   'dueDate',
   'dueTime',
@@ -508,9 +508,9 @@ function rerenderConfigForm(automation) {
 
 // A caixa da estimativa ao vivo: número grande em negrito com um círculo que
 // gira enquanto a filtragem não terminou. Fica logo antes do modelo de e-mail.
-function createPreviewBox() {
+function createPreviewBox(danger) {
   const box = document.createElement('div');
-  box.className = 'preview-result full-width';
+  box.className = 'preview-result full-width' + (danger ? ' is-danger' : '');
   box.hidden = true;
   box.innerHTML =
     '<span class="preview-spinner" aria-hidden="true"></span><span class="preview-text"></span>';
@@ -690,16 +690,32 @@ function renderConfigForm(automation) {
         'Você pode usar: ' + automation.meta.placeholders.map((ph) => `<code>${ph}</code>`).join(' ');
       wrapper.appendChild(hint);
     }
+    // Dica curta embaixo do campo, para casos em que o nome do filtro sozinho
+    // engana (ex.: "Categoria" filtra empresa ou pessoa dependendo do modo).
+    if (field.hint) {
+      const hint = document.createElement('p');
+      hint.className = 'placeholder-hint';
+      hint.textContent = field.hint;
+      wrapper.appendChild(hint);
+    }
     grid.appendChild(wrapper);
   }
 
+  // Automação com mais de uma "Ação" (ex.: apagar OU editar tarefas): só a
+  // ação de apagar é irreversível, então o vermelho/rótulo de perigo segue o
+  // valor atual do campo `action`, não a automação inteira.
+  const actionLabels = automation.meta.actionLabels?.[values.action];
+  const isDangerNow = automation.meta.destructive === true && (!automation.meta.actionLabels || values.action !== 'edit');
+
   // Sem modelo de e-mail (ex.: tarefas em massa) a estimativa fecha o formulário.
-  if (!grid.querySelector('.preview-result')) grid.appendChild(createPreviewBox());
+  if (!grid.querySelector('.preview-result')) grid.appendChild(createPreviewBox(isDangerNow));
 
   form.appendChild(grid);
 
   // "Rodar agora" no fim do formulário. appendChild move o nó do lugar anterior,
   // então ele sempre acaba aqui, no formulário recém-montado.
+  runButton.textContent = actionLabels?.run || automation.meta.runLabel || 'Rodar agora';
+  runButton.classList.toggle('is-danger', isDangerNow);
   const runRow = document.createElement('div');
   runRow.className = 'run-row';
   runRow.appendChild(runButton);
@@ -727,6 +743,9 @@ function renderHistoryTable(runs, meta) {
   const recentes = runs.slice(0, 2);
 
   const isDrafts = meta.resultView === 'drafts';
+  // Automação com mais de uma ação (ex.: apagar OU editar) usa a mesma tabela
+  // genérica pras duas — "Afetadas" cobre tanto "apagadas" quanto "atualizadas".
+  const isAffect = meta.destructive === true;
   const table = document.createElement('table');
   table.className = 'history-table';
   table.innerHTML = isDrafts
@@ -741,6 +760,18 @@ function renderHistoryTable(runs, meta) {
       </tr>
     </thead>
   `
+    : isAffect
+    ? `
+    <thead>
+      <tr>
+        <th>Quando</th>
+        <th>Filtros</th>
+        <th>Afetadas</th>
+        <th>Erros</th>
+        <th></th>
+      </tr>
+    </thead>
+  `
     : `
     <thead>
       <tr>
@@ -749,11 +780,15 @@ function renderHistoryTable(runs, meta) {
         <th>Vencimento</th>
         <th>Encontradas</th>
         <th>Criadas</th>
+        <th>Sem contato</th>
         <th>Erros</th>
         <th></th>
       </tr>
     </thead>
   `;
+  // Quantas colunas o cabeçalho tem, pra linha de detalhe (que é uma célula só)
+  // esticar por baixo de todas sem precisar repetir esse número na mão.
+  const totalCols = table.querySelectorAll('thead th').length;
   const tbody = document.createElement('tbody');
   // Nos filtros do histórico entram os campos de escolha; os de texto livre
   // (assunto, corpo) ficariam ilegíveis numa célula de tabela. E cada linha só
@@ -774,12 +809,20 @@ function renderHistoryTable(runs, meta) {
       <td>${run.draftCount}</td>
       <td>${run.missingEmailCount || 0}</td>
     `
+      : isAffect
+      ? `
+      <td>${formatDate(run.ranAt)}</td>
+      <td>${filterSummary}</td>
+      <td>${run.created}</td>
+      <td>${run.errorCount || 0}</td>
+    `
       : `
       <td>${formatDate(run.ranAt)}</td>
       <td>${filterSummary}</td>
       <td>${run.config.dueDate} ${run.config.dueTime}</td>
       <td>${run.matchedCount}</td>
       <td>${run.created}</td>
+      <td${run.skippedLabel ? ` title="Sem ${run.skippedLabel} cadastrado"` : ''}>${run.skippedCount || 0}</td>
       <td>${run.errorCount || 0}</td>
     `;
 
@@ -789,20 +832,21 @@ function renderHistoryTable(runs, meta) {
         const toggleBtn = document.createElement('button');
         toggleBtn.type = 'button';
         toggleBtn.className = 'history-detail-toggle';
-        toggleBtn.textContent = 'Ver tarefas';
+        toggleBtn.textContent = isAffect ? 'Ver detalhes' : 'Ver tarefas';
         toggleTd.appendChild(toggleBtn);
 
         const detailTr = document.createElement('tr');
         detailTr.className = 'history-detail-row';
         detailTr.hidden = true;
         const detailTd = document.createElement('td');
-        detailTd.colSpan = 7;
+        detailTd.colSpan = totalCols;
         detailTd.appendChild(renderHistoryItems(run.items));
         detailTr.appendChild(detailTd);
 
+        const showLabel = isAffect ? 'Ver detalhes' : 'Ver tarefas';
         toggleBtn.addEventListener('click', () => {
           detailTr.hidden = !detailTr.hidden;
-          toggleBtn.textContent = detailTr.hidden ? 'Ver tarefas' : 'Esconder';
+          toggleBtn.textContent = detailTr.hidden ? showLabel : 'Esconder';
         });
 
         tbody.appendChild(tr);
@@ -850,7 +894,7 @@ function renderHistoryItems(items) {
 
     if (!item.ok) {
       const err = document.createElement('span');
-      err.className = 'history-detail-error-msg';
+      err.className = item.skipped ? 'history-detail-skipped-msg' : 'history-detail-error-msg';
       err.textContent = item.error;
       li.appendChild(err);
     }
@@ -1235,6 +1279,23 @@ function formatEstimate(automation, data) {
     const shown = (sample || []).slice(0, 6).map((n) => n.trim());
     return shown.length ? `Ex.: ${shown.join(', ')}` : 'Ex.: —';
   };
+  // Automação destrutiva (apagar/editar em massa): a estimativa é a última
+  // chance de olhar antes de rodar, então lista os nomes em vez de só contar.
+  if (automation.meta.destructive) {
+    const r = data.result;
+    const isEdit = getFormValues().action === 'edit';
+    if (!r.count) return 'Nenhuma tarefa casa com esse filtro agora.';
+    const verb = isEdit ? 'SERIAM ATUALIZADAS' : 'SERIAM APAGADAS — não tem como desfazer depois de rodar';
+    const lines = [`${r.count} tarefa(s) ${verb}.`];
+    if (typeof r.scannedCount === 'number' && r.scannedCount !== r.count) {
+      lines.push(`(de ${r.scannedCount} encontrada(s) no dia, ${r.count} batem com o filtro.)`);
+    }
+    if (r.sample?.length) lines.push(...r.sample);
+    if (r.count > (r.sample?.length || 0)) {
+      lines.push(`+ ${r.count - r.sample.length} outra(s) — estreite o filtro pra ver todas antes de rodar.`);
+    }
+    return lines.join('\n');
+  }
   if (automation.meta.resultView === 'drafts') {
     const r = data.result;
     const unidade = getFormValues().source === 'deals' ? 'negócio(s) nessa etapa' : 'contato(s) no filtro';
@@ -1242,14 +1303,20 @@ function formatEstimate(automation, data) {
   }
   const r = data.result;
   const alvo = r.kind === 'organizations' ? 'empresa(s) sem pessoa cadastrada' : 'pessoa(s)';
-  let msg = `${r.matchedCount} ${alvo} casam com os filtros atuais. ${examples(r.sample)}`;
+  const lines = [`${r.matchedCount} ${alvo} casam com os filtros atuais. ${examples(r.sample)}`];
   // Empresa/região com alvo "pessoas" dando zero costuma ser empresa sem
   // contato cadastrado — o caso que o alvo "empresas sem pessoa" resolve.
   if (r.kind === 'people' && r.matchedCount === 0 && getFormValues().source === 'organizations') {
-    msg +=
-      ' Se as empresas desse filtro não têm contato, troque "Criar tarefa para" para "Empresas que ainda não têm nenhuma pessoa cadastrada".';
+    lines.push(
+      'Se as empresas desse filtro não têm contato, troque "Criar tarefa para" para "Empresas que ainda não têm nenhuma pessoa cadastrada".'
+    );
   }
-  return msg;
+  // Tarefa de e-mail/ligação: avisa em linha própria quantos do filtro não
+  // têm o contato necessário, já que esses ficam de fora da criação.
+  if (typeof r.missingCount === 'number' && r.missingCount > 0) {
+    lines.push(`${r.missingCount} sem ${r.missingLabel} cadastrado — não vão receber tarefa.`);
+  }
+  return lines.join('\n');
 }
 
 async function runLivePreview(automation) {
@@ -1261,7 +1328,9 @@ async function runLivePreview(automation) {
   const token = ++livePreviewToken;
   box.hidden = false;
   box.classList.add('is-estimating');
-  text.textContent = 'Calculando quantos contatos o filtro pega…';
+  text.textContent = automation.meta.destructive
+    ? 'Buscando quais tarefas o filtro pega…'
+    : 'Calculando quantos contatos o filtro pega…';
   try {
     const res = await fetch(`/api/automations/${automation.meta.id}/preview`, {
       method: 'POST',
@@ -1283,9 +1352,11 @@ async function runLivePreview(automation) {
 
 runButton.addEventListener('click', async () => {
   if (!activeId) return;
+  const startedAutomation = currentAutomation();
+  const startedActionLabels = startedAutomation?.meta.actionLabels?.[getFormValues().action];
   runButton.disabled = true;
   runButton.classList.add('is-running');
-  runButton.textContent = 'Rodando...';
+  runButton.textContent = startedActionLabels?.running || startedAutomation?.meta.runningLabel || 'Rodando...';
   logOutputEl.textContent = 'Executando...';
 
   try {
@@ -1314,7 +1385,7 @@ runButton.addEventListener('click', async () => {
   } finally {
     runButton.disabled = false;
     runButton.classList.remove('is-running');
-    runButton.textContent = 'Rodar agora';
+    runButton.textContent = startedActionLabels?.run || startedAutomation?.meta.runLabel || 'Rodar agora';
   }
 });
 
