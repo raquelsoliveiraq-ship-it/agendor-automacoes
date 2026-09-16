@@ -1302,7 +1302,12 @@ function formatEstimate(automation, data) {
     return `${r.matchedCount} ${unidade}: ${r.readyCount} com e-mail e ${r.missingEmailCount} sem. ${examples(r.sample)}`;
   }
   const r = data.result;
-  const alvo = r.kind === 'organizations' ? 'empresa(s) sem pessoa cadastrada' : 'pessoa(s)';
+  const alvo =
+    r.kind === 'organizations'
+      ? getFormValues().orgTarget === 'with-email'
+        ? 'empresa(s) com e-mail cadastrado'
+        : 'empresa(s) sem pessoa cadastrada'
+      : 'pessoa(s)';
   const lines = [`${r.matchedCount} ${alvo} casam com os filtros atuais. ${examples(r.sample)}`];
   // Empresa/região com alvo "pessoas" dando zero costuma ser empresa sem
   // contato cadastrado — o caso que o alvo "empresas sem pessoa" resolve.

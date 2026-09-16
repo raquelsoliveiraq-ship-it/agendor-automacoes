@@ -89,6 +89,16 @@ export async function collectOrgsWithoutPeople(config, { maxPages }) {
   return orgs.filter((o) => !Array.isArray(o.people) || o.people.length === 0);
 }
 
+// Empresas que casam com o filtro e têm e-mail cadastrado (o da própria
+// empresa), independente de já terem pessoas vinculadas ou não. Usado pela
+// automação "Tarefas em massa" para mandar a tarefa direto pra empresa mesmo
+// quando ela já tem contatos — casos em que quem decide é a empresa, não a
+// pessoa cadastrada nela.
+export async function collectOrgsWithEmail(config, { maxPages }) {
+  const orgs = await collectOrgs(config, maxPages);
+  return orgs.filter((o) => Boolean(o.contact?.email || o.email));
+}
+
 async function paginatePeople(filters, maxPages) {
   const all = [];
   for (let page = 1; page <= maxPages; page++) {

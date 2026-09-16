@@ -149,7 +149,7 @@ Rascunhos para a empresa aparecem com o subtítulo "E-mail da empresa" e
 a lista "sem e-mail".
 
 **Criar tarefa para (só em "Tarefas em massa"):** no modo "Empresa / região" há
-o campo **"Criar tarefa para"**, com duas opções:
+o campo **"Criar tarefa para"**, com três opções:
 
 - **Pessoas das empresas filtradas** — padrão, comportamento antigo: uma tarefa
   por pessoa das empresas que casam com o filtro. Empresas sem contato ficam de
@@ -161,6 +161,11 @@ o campo **"Criar tarefa para"**, com duas opções:
   `/organizations/{id}/tasks` funcionam igual aos de `/people/{id}/tasks`
   (mesmo payload, mesmo shift de +3h no `due_date`). No filtro "Categoria:
   Contato" da conta isso pega 158 empresas.
+- **Empresas que têm e-mail cadastrado (mesmo com pessoas vinculadas)** — cria
+  a tarefa direto na empresa (mesmo endpoint acima), desde que ela tenha e-mail
+  próprio (`contact.email` ou `email` da empresa) — não importa se já tem
+  pessoas cadastradas. Serve para quando quem decide é a empresa, não a pessoa
+  vinculada a ela.
 
 ### ⚠️ Sobre os dados no Agendor
 

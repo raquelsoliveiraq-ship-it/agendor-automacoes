@@ -4,6 +4,7 @@ import { cachedOptions } from '../optionsCache.js';
 import {
   collectContacts as queryContacts,
   collectOrgsWithoutPeople,
+  collectOrgsWithEmail,
   orgFilterOptions,
   ORG_FILTER_FIELDS,
 } from './peopleQuery.js';
@@ -12,7 +13,7 @@ export const meta = {
   id: 'bulk-tasks-by-filter',
   name: 'Tarefas em massa por filtro',
   description:
-    'Cria uma tarefa igual para todas as pessoas que casam com os filtros escolhidos (por categoria de cliente ou por empresa/região), numa data específica. No modo empresa também dá para criar a tarefa nas empresas que ainda não têm nenhuma pessoa cadastrada — útil para ir atrás do responsável.',
+    'Cria uma tarefa igual para todas as pessoas que casam com os filtros escolhidos (por categoria de cliente ou por empresa/região), numa data específica. No modo empresa também dá para criar a tarefa direto na empresa: nas que ainda não têm nenhuma pessoa cadastrada (pra ir atrás do responsável) ou nas que já têm e-mail cadastrado, mesmo com pessoas vinculadas.',
   configurable: true,
   howItWorks: [
     'Quando o tipo é "E-mail", quem não tem e-mail cadastrado (nem na pessoa, nem na empresa) fica de fora: a tarefa não é criada para eles e eles aparecem separados no resultado e no histórico.',
@@ -94,6 +95,7 @@ export const meta = {
       type: 'select',
       options: [
         { value: 'no-people', label: 'Empresas que ainda não têm nenhuma pessoa cadastrada' },
+        { value: 'with-email', label: 'Empresas que têm e-mail cadastrado (mesmo com pessoas vinculadas)' },
         { value: 'people', label: 'Pessoas das empresas filtradas' },
       ],
       default: 'no-people',
@@ -171,11 +173,15 @@ async function computeOptions(source) {
 //   kind 'organizations' — tarefa por empresa (POST /organizations/{id}/tasks).
 //
 // 'people' (categoria) e o modo empresa com alvo "pessoas" caem no primeiro
-// caso. O modo empresa com alvo "empresas sem pessoa" cai no segundo: filtra as
-// empresas e fica só com as que não têm nenhuma pessoa cadastrada.
+// caso. O modo empresa com alvo "empresas sem pessoa" ou "empresas com
+// e-mail" cai no segundo: filtra as empresas e a tarefa vai direto pra elas.
 async function collectTargets(config) {
   if (config.source === 'organizations' && config.orgTarget === 'no-people') {
     const orgs = await collectOrgsWithoutPeople(config, { maxPages: MAX_PAGES });
+    return { kind: 'organizations', targets: orgs };
+  }
+  if (config.source === 'organizations' && config.orgTarget === 'with-email') {
+    const orgs = await collectOrgsWithEmail(config, { maxPages: MAX_PAGES });
     return { kind: 'organizations', targets: orgs };
   }
   const { people } = await queryContacts(config, { maxPages: MAX_PAGES });
@@ -246,7 +252,12 @@ export async function run({ log = () => {}, config }) {
   }
 
   const { kind, targets } = await collectTargets(config);
-  const unit = kind === 'organizations' ? 'empresa(s) sem pessoa cadastrada' : 'pessoa(s)';
+  const unit =
+    kind === 'organizations'
+      ? config.orgTarget === 'with-email'
+        ? 'empresa(s) com e-mail cadastrado'
+        : 'empresa(s) sem pessoa cadastrada'
+      : 'pessoa(s)';
   const noun = kind === 'organizations' ? 'empresa' : 'pessoa';
   log(`Encontradas ${targets.length} ${unit} com os filtros selecionados.`);
 
