@@ -1021,12 +1021,24 @@ function renderDrafts(result) {
   }
 
   if (drafts.length) {
+    const csvNote = document.createElement('div');
+    csvNote.className = 'csv-export-note';
+
+    const csvNoteText = document.createElement('p');
+    csvNoteText.innerHTML =
+      '<strong>Depois de exportar:</strong> importe na planilha de mala direta ' +
+      '(Arquivo → Importar → "Substituir planilha") e use o menu "Envio de e-mails" ' +
+      'de lá. O envio real só acontece ali, com confirmação.';
+    csvNote.appendChild(csvNoteText);
+
     const exportBtn = document.createElement('button');
     exportBtn.type = 'button';
     exportBtn.className = 'primary';
     exportBtn.textContent = 'Exportar CSV (mala direta)';
     exportBtn.addEventListener('click', () => downloadDraftsCsv(drafts));
-    section.appendChild(exportBtn);
+    csvNote.appendChild(exportBtn);
+
+    section.appendChild(csvNote);
   }
 
   if (drafts.length) renderAccountBar(section);

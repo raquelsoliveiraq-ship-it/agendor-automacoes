@@ -14,6 +14,9 @@
   --red-700: #b42318;
   --red-600: #d92d20;
   --red-100: #fde8e6;
+  --amber-900: #7c4a03;
+  --amber-600: #d97706;
+  --amber-100: #fef3c7;
 }
 
 * {
@@ -1167,4 +1170,24 @@ textarea.body-template {
   font-size: 0.88rem;
   color: var(--blue-900);
   line-height: 1.45;
+}
+
+.csv-export-note {
+  background: var(--amber-100);
+  border: 1px solid var(--amber-600);
+  border-left: 4px solid var(--amber-600);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  color: var(--amber-900);
+  line-height: 1.4;
+}
+
+.csv-export-note p {
+  margin: 0 0 8px;
+}
+
+.csv-export-note strong {
+  color: var(--amber-900);
 }
