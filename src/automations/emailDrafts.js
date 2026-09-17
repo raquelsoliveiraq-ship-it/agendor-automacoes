@@ -68,6 +68,25 @@ export const meta = {
       emptyLabel: 'Qualquer responsável',
       showWhen: { field: 'source', in: ['people', 'organizations'] },
     },
+    {
+      // Cargo é texto livre no cadastro (105 variações na conta), mas a API
+      // casa `role` por prefixo/substring — então "Analista Cultura" pega
+      // também "Analista Cultura (Teatro)", "Analista Cultura (Música)" etc.
+      // Mesma lista fixa de "Tarefas em massa" (sem endpoint de cargos na API).
+      name: 'role',
+      label: 'Cargo',
+      type: 'select',
+      options: [
+        { value: 'Analista Cultura', label: 'Analista Cultura' },
+        { value: 'Analista Ambiental', label: 'Analista Ambiental' },
+        { value: 'Analista Educação', label: 'Analista Educação' },
+        { value: 'Analista Social', label: 'Analista Social' },
+        { value: 'Analista Saúde', label: 'Analista Saúde' },
+      ],
+      allowEmpty: true,
+      emptyLabel: 'Qualquer cargo',
+      showWhen: { field: 'source', in: ['people', 'organizations'] },
+    },
     // Filtros do modo "Empresa / região" (origem, setor, estado, cidade,
     // produto). Filtram as empresas; a automação depois pega as pessoas delas.
     ...ORG_FILTER_FIELDS,
@@ -120,7 +139,7 @@ export const meta = {
       label: 'Filtro',
       title: 'Contatos selecionados',
       detailTemplate:
-        'Fonte: {source} · Categoria: {categoryId} · Responsável: {ownerUserId} · Empresa: {organizationId} · ' +
+        'Fonte: {source} · Categoria: {categoryId} · Cargo: {role} · Responsável: {ownerUserId} · Empresa: {organizationId} · ' +
         'Origem: {leadOriginId} · Setor: {sectorId} · Estado: {stateUf} · Cidade: {cityName} · Produto: {productId} · ' +
         'Etapa: {dealStageId} · Situação: {dealStatusId}',
     },
