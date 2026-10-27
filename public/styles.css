@@ -857,6 +857,35 @@ textarea.body-template {
   line-height: 1.5;
 }
 
+/* Corpo do e-mail com formatação: aceita colar e-mail HTML com imagem e arte. */
+.rich-editor {
+  min-height: 150px;
+  max-height: 420px;
+  overflow: auto;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  line-height: 1.5;
+}
+
+.rich-editor:focus {
+  outline: 2px solid var(--blue-50);
+  border-color: #7aa7e8;
+}
+
+.rich-editor img,
+.draft-body--html img {
+  max-width: 100%;
+  height: auto;
+}
+
+.draft-body--html {
+  white-space: normal;
+  max-height: 320px;
+}
+
 /* Conta do Gmail */
 .account-bar {
   display: flex;

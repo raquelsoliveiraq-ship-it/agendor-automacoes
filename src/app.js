@@ -41,7 +41,7 @@ function checkAuth(req, res, next) {
 }
 
 app.use(checkAuth);
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 app.get('/api/automations', async (req, res) => {

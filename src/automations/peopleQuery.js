@@ -99,6 +99,41 @@ export async function collectOrgsWithEmail(config, { maxPages }) {
   return orgs.filter((o) => Boolean(o.contact?.email || o.email));
 }
 
+// Telefone: qualquer um dos três campos do `contact` conta (comercial,
+// celular ou WhatsApp). Fax/ramal não contam — não dá pra ligar neles. Mesma
+// regra vale pra pessoa e pra empresa (a API devolve o mesmo shape de
+// `contact` nos dois casos).
+export function hasPhone(target) {
+  const c = target?.contact;
+  return Boolean(c?.work || c?.mobile || c?.whatsapp);
+}
+
+// Para tarefas de Ligação em massa por empresa/região: junta empresas E
+// pessoas vinculadas que tenham telefone cadastrado. Dois modos (`orgTarget`):
+//   'phone-coverage' — pessoa quando tem telefone; a empresa só entra quando
+//                       NENHUMA pessoa vinculada a ela tiver telefone (evita
+//                       duas tarefas de ligação pro mesmo lugar).
+//   'phone-both'     — empresa E pessoas vinculadas, sempre que cada uma
+//                       tiver telefone, mesmo quando os dois casos valem pra
+//                       mesma empresa (mesma filosofia do alvo "Empresas que
+//                       têm e-mail cadastrado (mesmo com pessoas
+//                       vinculadas)", só que somando a pessoa também).
+export async function collectPhoneTargets(config, { maxPages, orgTarget }) {
+  const orgs = await collectOrgs(config, maxPages);
+  if (orgs.length === 0) return { people: [], orgs: [] };
+
+  const orgIds = new Set(orgs.map((o) => o.id));
+  const allPeople = await paginatePeople({ role: config.role }, maxPages);
+  const people = allPeople.filter((p) => p.organization && orgIds.has(p.organization.id) && hasPhone(p));
+
+  if (orgTarget === 'phone-both') {
+    return { people, orgs: orgs.filter(hasPhone) };
+  }
+
+  const covered = new Set(people.map((p) => p.organization.id));
+  return { people, orgs: orgs.filter((o) => hasPhone(o) && !covered.has(o.id)) };
+}
+
 async function paginatePeople(filters, maxPages) {
   const all = [];
   for (let page = 1; page <= maxPages; page++) {

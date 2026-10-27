@@ -5,6 +5,8 @@ import {
   collectContacts as queryContacts,
   collectOrgsWithoutPeople,
   collectOrgsWithEmail,
+  collectPhoneTargets,
+  hasPhone,
   orgFilterOptions,
   ORG_FILTER_FIELDS,
 } from './peopleQuery.js';
@@ -19,6 +21,7 @@ export const meta = {
     'Quando o tipo é "E-mail", quem não tem e-mail cadastrado (nem na pessoa, nem na empresa) fica de fora: a tarefa não é criada para eles e eles aparecem separados no resultado e no histórico.',
     'Quando o tipo é "Ligação", vale a mesma regra pra quem não tem telefone cadastrado (comercial, celular ou WhatsApp — fax e ramal não contam).',
     'Reunião e Visita não têm essa checagem — todo mundo que casa com o filtro recebe a tarefa.',
+    '"Pessoas vinculadas com telefone" e "Empresas e pessoas vinculadas" (em "Criar tarefa para") são pra ligação: juntam empresa e pessoas da empresa que tenham telefone. A primeira evita ligar duas vezes pro mesmo lugar (só manda pra empresa se ninguém vinculado tiver telefone); a segunda manda pros dois sempre que os dois tiverem.',
   ],
   configSchema: [
     {
@@ -96,6 +99,11 @@ export const meta = {
       options: [
         { value: 'no-people', label: 'Empresas que ainda não têm nenhuma pessoa cadastrada' },
         { value: 'with-email', label: 'Empresas que têm e-mail cadastrado (mesmo com pessoas vinculadas)' },
+        {
+          value: 'phone-coverage',
+          label: 'Pessoas vinculadas com telefone (empresa só entra se ninguém vinculado tiver telefone)',
+        },
+        { value: 'phone-both', label: 'Empresas e pessoas vinculadas, sempre que os dois tiverem telefone' },
         { value: 'people', label: 'Pessoas das empresas filtradas' },
       ],
       default: 'no-people',
@@ -171,10 +179,13 @@ async function computeOptions(source) {
 // Devolve { kind, targets }, onde targets é sempre [{ id, name, ... }]:
 //   kind 'people'        — tarefa por pessoa (POST /people/{id}/tasks).
 //   kind 'organizations' — tarefa por empresa (POST /organizations/{id}/tasks).
+//   kind 'mixed'         — os dois casos no mesmo lote; cada item carrega seu
+//                          próprio `_kind` ('people' ou 'organizations').
 //
 // 'people' (categoria) e o modo empresa com alvo "pessoas" caem no primeiro
-// caso. O modo empresa com alvo "empresas sem pessoa" ou "empresas com
-// e-mail" cai no segundo: filtra as empresas e a tarefa vai direto pra elas.
+// caso. "Empresas sem pessoa" ou "empresas com e-mail" caem no segundo: filtra
+// as empresas e a tarefa vai direto pra elas. "phone-coverage"/"phone-both"
+// caem no terceiro: juntam empresa e pessoas vinculadas com telefone.
 async function collectTargets(config) {
   if (config.source === 'organizations' && config.orgTarget === 'no-people') {
     const orgs = await collectOrgsWithoutPeople(config, { maxPages: MAX_PAGES });
@@ -183,6 +194,14 @@ async function collectTargets(config) {
   if (config.source === 'organizations' && config.orgTarget === 'with-email') {
     const orgs = await collectOrgsWithEmail(config, { maxPages: MAX_PAGES });
     return { kind: 'organizations', targets: orgs };
+  }
+  if (config.source === 'organizations' && (config.orgTarget === 'phone-coverage' || config.orgTarget === 'phone-both')) {
+    const { people, orgs } = await collectPhoneTargets(config, { maxPages: MAX_PAGES, orgTarget: config.orgTarget });
+    const targets = [
+      ...people.map((p) => ({ ...p, _kind: 'people' })),
+      ...orgs.map((o) => ({ ...o, _kind: 'organizations' })),
+    ];
+    return { kind: 'mixed', targets };
   }
   const { people } = await queryContacts(config, { maxPages: MAX_PAGES });
   return { kind: 'people', targets: people };
@@ -197,14 +216,6 @@ function buildDueDate(config) {
 // está preenchido.
 function hasEmail(target) {
   return Boolean(target.contact?.email || target.email);
-}
-
-// Telefone: qualquer um dos três campos de telefone do `contact` conta
-// (comercial, celular ou WhatsApp). Fax/ramal/rádio não contam — não dá pra
-// ligar neles.
-function hasPhone(target) {
-  const c = target.contact;
-  return Boolean(c?.work || c?.mobile || c?.whatsapp);
 }
 
 // Só esses dois tipos de tarefa exigem um jeito específico de contato pra
@@ -257,8 +268,13 @@ export async function run({ log = () => {}, config }) {
       ? config.orgTarget === 'with-email'
         ? 'empresa(s) com e-mail cadastrado'
         : 'empresa(s) sem pessoa cadastrada'
-      : 'pessoa(s)';
-  const noun = kind === 'organizations' ? 'empresa' : 'pessoa';
+      : kind === 'mixed'
+        ? 'empresa(s)/pessoa(s) com telefone cadastrado'
+        : 'pessoa(s)';
+  // No alvo "mixed" (phone-coverage/phone-both) cada item já sabe se é
+  // empresa ou pessoa (`_kind`); nos outros alvos o lote inteiro é de um
+  // tipo só, então usa o `kind` do lote.
+  const nounFor = (target) => ((target._kind || kind) === 'organizations' ? 'empresa' : 'pessoa');
   log(`Encontradas ${targets.length} ${unit} com os filtros selecionados.`);
 
   const { ready, missing, label } = splitByRequiredContact(config, targets);
@@ -274,15 +290,17 @@ export async function run({ log = () => {}, config }) {
   const items = [];
 
   for (const target of missing) {
+    const noun = nounFor(target);
     const message = `SEM ${label.toUpperCase()}: "${target.name}" (${noun} ${target.id}) não tem ${label} cadastrado — tarefa não criada.`;
     log(`  -> ${message}`);
     items.push({ targetId: target.id, name: target.name, link: target._webUrl || null, ok: false, skipped: true, error: message });
   }
 
   for (const target of ready) {
+    const noun = nounFor(target);
     try {
       const task =
-        kind === 'organizations'
+        noun === 'empresa'
           ? await createOrganizationTask({ organizationId: target.id, text: config.taskText, dueDate, assignedUsers, type })
           : await createPersonTask({ personId: target.id, text: config.taskText, dueDate, assignedUsers, type });
       log(`  -> tarefa ${task.id} criada para "${target.name}" (${noun} ${target.id})`);

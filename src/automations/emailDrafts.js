@@ -129,7 +129,7 @@ export const meta = {
     {
       name: 'bodyTemplate',
       label: 'Corpo do e-mail',
-      type: 'textarea',
+      type: 'richtext',
       required: true,
       default: 'Olá, {primeiroNome}!\n\nEstou retomando o contato para saber como você está.\n\nFico à disposição.\n\nAbraço,',
     },
@@ -325,18 +325,49 @@ async function collect(config) {
   return { candidates, ready, missingEmail };
 }
 
+// O corpo vira HTML quando a pessoa colou um e-mail formatado (imagem, arte,
+// links) no editor; texto simples continua sendo texto simples.
+const HTML_TAG = /<[a-z][\s\S]*>/i;
+
+const ENTITIES = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&nbsp;': ' ' };
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+// Versão em texto do HTML, para o CSV e para o link do Gmail (que só leva texto).
+function htmlToText(html) {
+  return String(html)
+    .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|li|tr|table)>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (m) => ENTITIES[m])
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function buildDraft(candidate, config) {
   const subject = interpolate(config.subjectTemplate, candidate.values);
-  const body = interpolate(config.bodyTemplate, candidate.values);
+  const isHtml = HTML_TAG.test(config.bodyTemplate);
+  // No HTML os valores entram escapados, para um nome com "&" não quebrar a marcação.
+  const bodyHtml = isHtml
+    ? interpolate(
+        config.bodyTemplate,
+        Object.fromEntries(Object.entries(candidate.values).map(([k, v]) => [k, escapeHtml(v)])),
+      )
+    : null;
+  const body = isHtml ? htmlToText(bodyHtml) : interpolate(config.bodyTemplate, candidate.values);
 
   // Abre a janela de escrita do Gmail já preenchida. Assunto e corpo viajam na
   // URL, então textos muito longos podem ser cortados pelo navegador — daí o
-  // botão de copiar ao lado, que nunca corta.
+  // botão de copiar ao lado, que nunca corta. A URL só leva texto: com corpo em
+  // HTML ele fica de fora e a tela copia o corpo formatado para colar no Gmail.
   const gmailUrl =
     'https://mail.google.com/mail/?view=cm&fs=1&tf=cm' +
     `&to=${encodeURIComponent(candidate.email)}` +
     `&su=${encodeURIComponent(subject)}` +
-    `&body=${encodeURIComponent(body)}`;
+    (isHtml ? '' : `&body=${encodeURIComponent(body)}`);
 
   return {
     key: candidate.key,
@@ -346,6 +377,7 @@ function buildDraft(candidate, config) {
     email: candidate.email,
     subject,
     body,
+    bodyHtml,
     gmailUrl,
   };
 }

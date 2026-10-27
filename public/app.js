@@ -588,7 +588,8 @@ function renderConfigForm(automation) {
 
     const wrapper = document.createElement('div');
     wrapper.className =
-      'form-field' + (field.type === 'text' || field.type === 'textarea' ? ' full-width' : '');
+      'form-field' +
+      (field.type === 'text' || field.type === 'textarea' || field.type === 'richtext' ? ' full-width' : '');
     const label = document.createElement('label');
     label.textContent = field.label;
     if (field.highlight) {
@@ -659,6 +660,11 @@ function renderConfigForm(automation) {
         refreshCanvas(automation);
         if (fieldAffectsCount(field)) scheduleLivePreview(automation);
       });
+    } else if (field.type === 'richtext') {
+      input = createRichEditor(values[field.name], (html) => {
+        values[field.name] = html;
+        refreshCanvas(automation);
+      });
     } else if (field.type === 'textarea') {
       input = document.createElement('textarea');
       input.className = 'body-template';
@@ -683,7 +689,7 @@ function renderConfigForm(automation) {
 
     // A lista de placeholders fica no último campo de texto livre, para não
     // repetir a mesma dica embaixo de assunto e corpo.
-    if (field.type === 'textarea' && automation.meta.placeholders) {
+    if ((field.type === 'textarea' || field.type === 'richtext') && automation.meta.placeholders) {
       const hint = document.createElement('p');
       hint.className = 'placeholder-hint';
       hint.innerHTML =
@@ -992,6 +998,82 @@ function downloadDraftsCsv(drafts) {
   URL.revokeObjectURL(url);
 }
 
+// Editor do corpo do e-mail. Aceita colar um e-mail já formatado (imagem, arte,
+// links, tabelas) e guarda o HTML; um textarea jogaria tudo isso fora. Texto
+// simples (modelos antigos, texto padrão) continua valendo: vira parágrafos.
+const HTML_TAG = /<[a-z][\s\S]*>/i;
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+}
+
+function plainToHtml(text) {
+  return escapeHtml(text).replace(/\r?\n/g, '<br>');
+}
+
+// Tira o que executa código do HTML colado (scripts, onclick=, javascript:),
+// já que o conteúdo é mostrado na tela e fica salvo nos modelos compartilhados.
+function sanitizeHtml(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('script, iframe, object, embed, link, meta, base, form').forEach((el) => el.remove());
+  for (const el of doc.body.querySelectorAll('*')) {
+    for (const attr of [...el.attributes]) {
+      const value = attr.value.trim().toLowerCase();
+      if (attr.name.startsWith('on') || (['href', 'src', 'xlink:href'].includes(attr.name) && value.startsWith('javascript:'))) {
+        el.removeAttribute(attr.name);
+      }
+    }
+  }
+  return doc.body.innerHTML;
+}
+
+function createRichEditor(initial, onChange) {
+  const editor = document.createElement('div');
+  editor.className = 'rich-editor';
+  editor.contentEditable = 'true';
+  editor.spellcheck = true;
+  editor.setAttribute('role', 'textbox');
+  editor.setAttribute('aria-multiline', 'true');
+  const text = initial ?? '';
+  editor.innerHTML = HTML_TAG.test(text) ? sanitizeHtml(text) : plainToHtml(text);
+
+  // Sem isto o navegador colaria o HTML bruto do site de origem; limpando antes,
+  // a imagem e a formatação entram, mas sem script.
+  editor.addEventListener('paste', (e) => {
+    const html = e.clipboardData?.getData('text/html');
+    if (!html) return; // texto puro: deixa o comportamento padrão
+    e.preventDefault();
+    document.execCommand('insertHTML', false, sanitizeHtml(html));
+  });
+  editor.addEventListener('input', () => {
+    // Editor vazio fica com um <br> perdido; conta como vazio.
+    const empty = !editor.textContent.trim() && !editor.querySelector('img');
+    onChange(empty ? '' : editor.innerHTML);
+  });
+  return editor;
+}
+
+// Copia o corpo com a formatação (para colar no Gmail e manter imagem e arte).
+// Cai para texto puro se o navegador não deixar escrever HTML na área de
+// transferência.
+async function copyRichToClipboard(html, text, feedbackEl, successMessage) {
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+      }),
+    ]);
+    feedbackEl.textContent = successMessage;
+  } catch {
+    await copyToClipboard(text, feedbackEl, 'Copiei só o texto (sem imagem), o navegador não deixou copiar com formatação');
+    return;
+  }
+  setTimeout(() => {
+    feedbackEl.textContent = '';
+  }, 4000);
+}
+
 function renderDrafts(result) {
   const section = document.createElement('section');
   section.className = 'drafts-section';
@@ -1077,7 +1159,12 @@ function renderDrafts(result) {
 
     const body = document.createElement('div');
     body.className = 'draft-body';
-    body.textContent = draft.body;
+    if (draft.bodyHtml) {
+      body.classList.add('draft-body--html');
+      body.innerHTML = sanitizeHtml(draft.bodyHtml);
+    } else {
+      body.textContent = draft.body;
+    }
     card.appendChild(body);
 
     const actions = document.createElement('div');
@@ -1087,16 +1174,32 @@ function renderDrafts(result) {
     gmailButton.type = 'button';
     gmailButton.className = 'primary';
     gmailButton.textContent = 'Abrir no Gmail';
-    gmailButton.addEventListener('click', () => openInGmail(card, draft));
-    actions.appendChild(gmailButton);
-
     const feedback = document.createElement('span');
     feedback.className = 'copied';
+
+    // Com corpo formatado o Gmail não recebe o texto pela URL: o clique já copia
+    // o corpo e abre o Gmail, e a pessoa só cola (Ctrl+V) no e-mail.
+    gmailButton.addEventListener('click', () => {
+      if (draft.bodyHtml) {
+        copyRichToClipboard(
+          draft.bodyHtml,
+          draft.body,
+          feedback,
+          'Corpo copiado: cole com Ctrl+V no e-mail do Gmail',
+        );
+      }
+      openInGmail(card, draft);
+    });
+    actions.appendChild(gmailButton);
 
     const copyBody = document.createElement('button');
     copyBody.type = 'button';
     copyBody.textContent = 'Copiar corpo';
-    copyBody.addEventListener('click', () => copyToClipboard(draft.body, feedback, 'Corpo copiado'));
+    copyBody.addEventListener('click', () =>
+      draft.bodyHtml
+        ? copyRichToClipboard(draft.bodyHtml, draft.body, feedback, 'Corpo copiado com imagem e formatação')
+        : copyToClipboard(draft.body, feedback, 'Corpo copiado'),
+    );
     actions.appendChild(copyBody);
 
     const copySubject = document.createElement('button');
@@ -1314,11 +1417,15 @@ function formatEstimate(automation, data) {
     return `${r.matchedCount} ${unidade}: ${r.readyCount} com e-mail e ${r.missingEmailCount} sem. ${examples(r.sample)}`;
   }
   const r = data.result;
+  const orgTargetLabels = {
+    'with-email': 'empresa(s) com e-mail cadastrado',
+    'no-people': 'empresa(s) sem pessoa cadastrada',
+    'phone-coverage': 'pessoa(s)/empresa(s) com telefone cadastrado',
+    'phone-both': 'empresa(s) e pessoa(s) com telefone cadastrado',
+  };
   const alvo =
-    r.kind === 'organizations'
-      ? getFormValues().orgTarget === 'with-email'
-        ? 'empresa(s) com e-mail cadastrado'
-        : 'empresa(s) sem pessoa cadastrada'
+    r.kind === 'organizations' || r.kind === 'mixed'
+      ? orgTargetLabels[getFormValues().orgTarget] || 'empresa(s)'
       : 'pessoa(s)';
   const lines = [`${r.matchedCount} ${alvo} casam com os filtros atuais. ${examples(r.sample)}`];
   // Empresa/região com alvo "pessoas" dando zero costuma ser empresa sem
