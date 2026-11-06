@@ -1257,7 +1257,9 @@ function renderDrafts(result) {
           draft.bodyHtml,
           draft.body,
           feedback,
-          'Corpo copiado: cole com Ctrl+V no e-mail do Gmail',
+          draft.textInUrl
+            ? 'O Gmail abriu com o texto. Para ter imagem e formatação: apague o texto e cole com Ctrl+V'
+            : 'Corpo copiado: cole com Ctrl+V no e-mail do Gmail',
         );
       }
       openInGmail(card, draft);
