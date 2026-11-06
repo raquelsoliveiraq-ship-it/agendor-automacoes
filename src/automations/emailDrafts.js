@@ -520,11 +520,12 @@ function buildDraft(candidate, config) {
   // URL, então textos muito longos podem ser cortados pelo navegador — daí o
   // botão de copiar ao lado, que nunca corta. A URL só leva texto: com corpo em
   // HTML ele fica de fora e a tela copia o corpo formatado para colar no Gmail.
-  // Com corpo em HTML, a URL leva a versão em texto (sem imagem/formatação) para
-  // o Gmail já abrir preenchido; a tela ainda copia a versão formatada para
-  // colar por cima. Textos longos demais ficam de fora para a URL não estourar.
+  // Com corpo em HTML, a URL NÃO leva o texto: o Gmail só aceita texto puro pelo
+  // link, e o texto na URL deixaria o corpo sem formatação (e, ao colar a versão
+  // formatada, duplicado). A tela copia o corpo formatado e a pessoa cola com
+  // Ctrl+V na janela aberta. Texto simples longo demais fica fora da URL.
   const encodedBody = encodeURIComponent(body);
-  const textInUrl = encodedBody.length <= 6000;
+  const textInUrl = !isHtml && encodedBody.length <= 6000;
   const gmailUrl =
     'https://mail.google.com/mail/?view=cm&fs=1&tf=cm' +
     `&to=${encodeURIComponent(candidate.email)}` +

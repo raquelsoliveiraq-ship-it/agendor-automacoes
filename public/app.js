@@ -1257,10 +1257,9 @@ function renderDrafts(result) {
           draft.bodyHtml,
           draft.body,
           feedback,
-          draft.textInUrl
-            ? 'O Gmail abriu com o texto. Para ter imagem e formatação: apague o texto e cole com Ctrl+V'
-            : 'Corpo copiado: cole com Ctrl+V no e-mail do Gmail',
+          'Corpo copiado: cole com Ctrl+V no e-mail do Gmail',
         );
+        showPasteToast();
       }
       openInGmail(card, draft);
     });
@@ -1329,6 +1328,22 @@ function renderDrafts(result) {
   }
 
   return section;
+}
+
+// Aviso grande, no topo da tela, porque a janela do Gmail abre por cima e o
+// aviso pequeno ao lado do botão passa despercebido.
+function showPasteToast() {
+  let toast = document.getElementById('paste-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'paste-toast';
+    toast.className = 'paste-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = '✓ Corpo formatado copiado. No Gmail, clique no corpo do e-mail e aperte Ctrl+V.';
+  toast.classList.add('is-visible');
+  clearTimeout(showPasteToast.timer);
+  showPasteToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 8000);
 }
 
 // Abre direto, sem confirmar a conta a cada clique — a conta é a que estiver

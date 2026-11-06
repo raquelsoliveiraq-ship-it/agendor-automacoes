@@ -870,6 +870,27 @@ textarea.body-template {
   line-height: 1.5;
 }
 
+.paste-toast {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  padding: 12px 18px;
+  border-radius: 8px;
+  background: #14532d;
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.paste-toast.is-visible {
+  opacity: 1;
+}
+
 .rich-toolbar {
   display: flex;
   flex-wrap: wrap;
