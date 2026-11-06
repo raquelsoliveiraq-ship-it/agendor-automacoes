@@ -887,6 +887,10 @@ textarea.body-template {
   transition: opacity 0.2s;
 }
 
+.paste-toast.is-error {
+  background: #991b1b;
+}
+
 .paste-toast.is-visible {
   opacity: 1;
 }

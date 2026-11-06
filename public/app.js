@@ -1139,11 +1139,12 @@ async function copyRichToClipboard(html, text, feedbackEl, successMessage) {
     feedbackEl.textContent = successMessage;
   } catch {
     await copyToClipboard(text, feedbackEl, 'Copiei só o texto (sem imagem), o navegador não deixou copiar com formatação');
-    return;
+    return false;
   }
   setTimeout(() => {
     feedbackEl.textContent = '';
   }, 4000);
+  return true;
 }
 
 function renderDrafts(result) {
@@ -1251,15 +1252,17 @@ function renderDrafts(result) {
 
     // Com corpo formatado o Gmail não recebe o texto pela URL: o clique já copia
     // o corpo e abre o Gmail, e a pessoa só cola (Ctrl+V) no e-mail.
-    gmailButton.addEventListener('click', () => {
+    // A cópia termina ANTES de abrir o Gmail: a nova aba rouba o foco da página e,
+    // se a cópia ainda estivesse em andamento, o navegador a recusaria.
+    gmailButton.addEventListener('click', async () => {
       if (draft.bodyHtml) {
-        copyRichToClipboard(
+        const ok = await copyRichToClipboard(
           draft.bodyHtml,
           draft.body,
           feedback,
           'Corpo copiado: cole com Ctrl+V no e-mail do Gmail',
         );
-        showPasteToast();
+        showPasteToast(ok);
       }
       openInGmail(card, draft);
     });
@@ -1332,7 +1335,7 @@ function renderDrafts(result) {
 
 // Aviso grande, no topo da tela, porque a janela do Gmail abre por cima e o
 // aviso pequeno ao lado do botão passa despercebido.
-function showPasteToast() {
+function showPasteToast(ok = true) {
   let toast = document.getElementById('paste-toast');
   if (!toast) {
     toast = document.createElement('div');
@@ -1340,7 +1343,10 @@ function showPasteToast() {
     toast.className = 'paste-toast';
     document.body.appendChild(toast);
   }
-  toast.textContent = '✓ Corpo formatado copiado. No Gmail, clique no corpo do e-mail e aperte Ctrl+V.';
+  toast.classList.toggle('is-error', !ok);
+  toast.textContent = ok
+    ? '✓ Corpo formatado copiado. No Gmail, clique no corpo do e-mail e aperte Ctrl+V.'
+    : '✗ Não consegui copiar com formatação. Volte aqui e use o botão "Copiar corpo".';
   toast.classList.add('is-visible');
   clearTimeout(showPasteToast.timer);
   showPasteToast.timer = setTimeout(() => toast.classList.remove('is-visible'), 8000);
