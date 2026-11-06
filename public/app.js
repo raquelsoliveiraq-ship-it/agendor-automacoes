@@ -1045,12 +1045,84 @@ function createRichEditor(initial, onChange) {
     e.preventDefault();
     document.execCommand('insertHTML', false, sanitizeHtml(html));
   });
-  editor.addEventListener('input', () => {
+  const emit = () => {
     // Editor vazio fica com um <br> perdido; conta como vazio.
     const empty = !editor.textContent.trim() && !editor.querySelector('img');
     onChange(empty ? '' : editor.innerHTML);
+  };
+  editor.addEventListener('input', emit);
+
+  // Enter vira parágrafo novo (com espaço entre eles); Shift+Enter só quebra a linha.
+  try {
+    document.execCommand('defaultParagraphSeparator', false, 'p');
+  } catch {
+    /* navegador sem suporte: Enter continua funcionando do jeito padrão */
+  }
+
+  // Barra de formatação. mousedown com preventDefault mantém a seleção do texto
+  // no editor ao clicar no botão.
+  const toolbar = document.createElement('div');
+  toolbar.className = 'rich-toolbar';
+  const run = (command, value = null) => {
+    editor.focus();
+    document.execCommand(command, false, value);
+    emit();
+  };
+  const buttons = [
+    { html: '<b>N</b>', title: 'Negrito (Ctrl+B)', command: 'bold' },
+    { html: '<i>I</i>', title: 'Itálico (Ctrl+I)', command: 'italic' },
+    { html: '<u>S</u>', title: 'Sublinhado (Ctrl+U)', command: 'underline' },
+    { sep: true },
+    { html: '• Lista', title: 'Lista com marcadores', command: 'insertUnorderedList' },
+    { html: '1. Lista', title: 'Lista numerada', command: 'insertOrderedList' },
+    { html: '⇥', title: 'Aumentar recuo', command: 'indent' },
+    { html: '⇤', title: 'Diminuir recuo', command: 'outdent' },
+    { sep: true },
+    { html: '⬅', title: 'Alinhar à esquerda', command: 'justifyLeft' },
+    { html: '↔', title: 'Centralizar', command: 'justifyCenter' },
+    { sep: true },
+    {
+      html: 'Link',
+      title: 'Transformar o texto selecionado em link',
+      action: () => {
+        const url = window.prompt('Endereço do link (https://...)');
+        if (url && !/^\s*javascript:/i.test(url)) run('createLink', url.trim());
+      },
+    },
+    { html: 'Tx', title: 'Limpar formatação do trecho selecionado', command: 'removeFormat' },
+  ];
+  for (const b of buttons) {
+    if (b.sep) {
+      const sep = document.createElement('span');
+      sep.className = 'rich-sep';
+      toolbar.appendChild(sep);
+      continue;
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'rich-btn';
+    btn.innerHTML = b.html;
+    btn.title = b.title;
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', () => (b.action ? b.action() : run(b.command)));
+    toolbar.appendChild(btn);
+  }
+
+  const size = document.createElement('select');
+  size.className = 'rich-size';
+  size.title = 'Tamanho da letra do trecho selecionado';
+  size.innerHTML =
+    '<option value="">Tamanho</option><option value="2">Pequeno</option><option value="3">Normal</option><option value="5">Grande</option>';
+  size.addEventListener('change', () => {
+    if (size.value) run('fontSize', size.value);
+    size.value = '';
   });
-  return editor;
+  toolbar.insertBefore(size, toolbar.children[4]);
+
+  const box = document.createElement('div');
+  box.className = 'rich-box';
+  box.append(toolbar, editor);
+  return box;
 }
 
 // Copia o corpo com a formatação (para colar no Gmail e manter imagem e arte).

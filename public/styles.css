@@ -870,6 +870,57 @@ textarea.body-template {
   line-height: 1.5;
 }
 
+.rich-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: #f4f6fa;
+}
+
+.rich-box .rich-editor {
+  border-radius: 0 0 8px 8px;
+}
+
+.rich-btn,
+.rich-size {
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.rich-btn:hover,
+.rich-size:hover {
+  background: var(--blue-50);
+}
+
+.rich-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.rich-editor p {
+  margin: 0 0 0.8em;
+}
+
+.rich-editor ul,
+.rich-editor ol {
+  margin: 0 0 0.8em;
+  padding-left: 1.6em;
+}
+
 .rich-editor:focus {
   outline: 2px solid var(--blue-50);
   border-color: #7aa7e8;
