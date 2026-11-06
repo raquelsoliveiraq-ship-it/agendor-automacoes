@@ -477,17 +477,31 @@ function escapeHtml(text) {
 
 // Versão em texto do HTML, para o CSV e para o link do Gmail (que só leva texto).
 function htmlToText(html) {
-  return String(html)
-    .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<li[^>]*>/gi, '• ')
-    .replace(/<\/li>/gi, '\n')
-    .replace(/<\/(ul|ol)>/gi, '\n')
-    .replace(/<\/(p|div|h[1-6]|tr|table)>/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, (m) => ENTITIES[m])
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  return (
+    String(html)
+      .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, '')
+      // Quebras de linha e recuos do código do HTML não são quebras do e-mail:
+      // sem isto, um texto colado de outro lugar sai picado em várias linhas.
+      .replace(/[\r\n\t ]+/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/<br\s*\/?>/gi, '\n')
+      // Link: mantém o endereço quando o texto do link não é o próprio endereço.
+      .replace(/<a\s[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (m, href, inner) => {
+        const label = inner.replace(/<[^>]+>/g, '').trim();
+        return !label || label === href || /^mailto:/i.test(href) ? label || href : `${label} (${href})`;
+      })
+      .replace(/<li[^>]*>/gi, '\n• ')
+      .replace(/<\/li>/gi, '')
+      .replace(/<\/(ul|ol)>/gi, '\n\n')
+      .replace(/<\/(td|th)>/gi, ' ')
+      .replace(/<\/(p|div|h[1-6]|tr|table|blockquote)>/gi, '\n\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&(amp|lt|gt|quot|#39);/g, (m) => ENTITIES[m])
+      .replace(/[ ]*\n[ ]*/g, '\n')
+      .replace(/ {2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+  );
 }
 
 function buildDraft(candidate, config) {
