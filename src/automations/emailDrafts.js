@@ -4,6 +4,7 @@ import {
   listOrganizations,
   listDealStages,
   listDealsByStage,
+  listTasksByDueRange,
   getPerson,
   getOrganization,
 } from '../agendorClient.js';
@@ -25,6 +26,7 @@ export const meta = {
   howItWorks: [
     'A estimativa em destaque, entre os filtros e o modelo de e-mail, se recalcula sozinha enquanto você mexe nos campos: o círculo fica girando enquanto a filtragem não terminou e depois mostra quantos contatos o filtro pega e quantos têm e-mail.',
     'Rodar agora: monta um rascunho por contato com e-mail e mostra o resumo do que encontrou logo abaixo, no bloco "Rascunhos prontos".',
+    '"Tarefas planejadas para um dia": pega as tarefas ainda não concluídas com vencimento naquele dia (dá pra afinar por tipo, responsável, texto e categoria da empresa) e monta o rascunho para a empresa ou pessoa de cada tarefa. "Para quem enviar" vale igual ao modo Empresa / região.',
     'Nada é enviado e nada é criado no Agendor. Os e-mails só saem quando você abre cada rascunho e clica em enviar.',
     'Os rascunhos ficam só nesta sessão do navegador: ao recarregar a página eles somem e é preciso rodar de novo. O histórico de execuções (só os números) fica salvo.',
   ],
@@ -37,6 +39,7 @@ export const meta = {
         { value: 'people', label: 'Categoria de cliente' },
         { value: 'organizations', label: 'Empresa / região' },
         { value: 'deals', label: 'Etapa do funil de vendas' },
+        { value: 'tasks', label: 'Tarefas planejadas para um dia' },
       ],
       default: 'people',
       required: true,
@@ -48,7 +51,8 @@ export const meta = {
       optionsSource: 'categories',
       allowEmpty: true,
       emptyLabel: 'Qualquer categoria',
-      showWhen: { field: 'source', in: ['people', 'organizations'] },
+      showWhen: { field: 'source', in: ['people', 'organizations', 'tasks'] },
+      hint: 'Em "Tarefas planejadas para um dia" vale a categoria da empresa (ou da pessoa, quando a tarefa está direto numa pessoa).',
     },
     {
       name: 'organizationId',
@@ -101,7 +105,43 @@ export const meta = {
       ],
       default: 'contact',
       required: true,
-      showWhen: { field: 'source', equals: 'organizations' },
+      showWhen: { field: 'source', in: ['organizations', 'tasks'] },
+    },
+    {
+      name: 'taskDate',
+      label: 'Tarefas planejadas para o dia',
+      type: 'date',
+      required: true,
+      showWhen: { field: 'source', equals: 'tasks' },
+    },
+    {
+      name: 'taskType',
+      label: 'Tipo de tarefa',
+      type: 'select',
+      options: [
+        { value: 'EMAIL', label: 'E-mail' },
+        { value: 'LIGACAO', label: 'Ligação' },
+        { value: 'REUNIAO', label: 'Reunião' },
+        { value: 'VISITA', label: 'Visita' },
+      ],
+      allowEmpty: true,
+      emptyLabel: 'Qualquer tipo',
+      showWhen: { field: 'source', equals: 'tasks' },
+    },
+    {
+      name: 'taskAssignedUserId',
+      label: 'Tarefa atribuída a',
+      type: 'select',
+      optionsSource: 'users',
+      allowEmpty: true,
+      emptyLabel: 'Qualquer responsável',
+      showWhen: { field: 'source', equals: 'tasks' },
+    },
+    {
+      name: 'taskTextContains',
+      label: 'Texto da tarefa contém',
+      type: 'text',
+      showWhen: { field: 'source', equals: 'tasks' },
     },
     {
       name: 'dealStageId',
@@ -141,7 +181,7 @@ export const meta = {
       detailTemplate:
         'Fonte: {source} · Categoria: {categoryId} · Cargo: {role} · Responsável: {ownerUserId} · Empresa: {organizationId} · ' +
         'Origem: {leadOriginId} · Setor: {sectorId} · Estado: {stateUf} · Cidade: {cityName} · Produto: {productId} · ' +
-        'Etapa: {dealStageId} · Situação: {dealStatusId}',
+        'Etapa: {dealStageId} · Situação: {dealStatusId} · Tarefas do dia: {taskDate} · Tipo da tarefa: {taskType}',
     },
     {
       label: 'Ação',
@@ -316,8 +356,108 @@ async function collectDeals(config) {
   return candidates;
 }
 
+// Tarefas planejadas para um dia (ainda não concluídas). A listagem de /tasks só
+// filtra de verdade por data; tipo, responsável e texto são filtrados aqui.
+// Cada tarefa está numa empresa OU numa pessoa. O cadastro completo (categoria e
+// e-mail) só vem no GET individual, então busca uma vez por id, poucos por vez.
+const TASK_TYPE_DISPLAY = { EMAIL: 'Email', LIGACAO: 'Ligação', REUNIAO: 'Reunião', VISITA: 'Visita' };
+
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        out[i] = await fn(items[i]);
+      }
+    }),
+  );
+  return out;
+}
+
+async function collectTasks(config) {
+  if (!config.taskDate) throw new Error('Escolha o dia das tarefas.');
+  const start = new Date(`${config.taskDate}T00:00:00-03:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+
+  const all = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const batch = await listTasksByDueRange({
+      dueDateGtISO: start.toISOString(),
+      dueDateLtISO: end.toISOString(),
+      page,
+      perPage: PER_PAGE,
+    });
+    all.push(...batch);
+    if (batch.length < PER_PAGE) break;
+  }
+
+  const typeFilter = config.taskType ? TASK_TYPE_DISPLAY[config.taskType] : null;
+  const textFilter = config.taskTextContains ? config.taskTextContains.trim().toLowerCase() : null;
+  const tasks = all.filter((t) => {
+    if (t.finishedAt) return false;
+    if (!t.organization && !t.person) return false;
+    if (typeFilter && t.type !== typeFilter) return false;
+    if (
+      config.taskAssignedUserId &&
+      !(t.assignedUsers || []).some((u) => String(u.id) === String(config.taskAssignedUserId))
+    ) {
+      return false;
+    }
+    if (textFilter && !String(t.text || '').toLowerCase().includes(textFilter)) return false;
+    return true;
+  });
+
+  // Alvos únicos: a mesma empresa pode ter mais de uma tarefa no dia.
+  const refs = new Map();
+  for (const t of tasks) {
+    const kind = t.organization ? 'org' : 'person';
+    refs.set(`${kind}:${(t.organization || t.person).id}`, { kind, id: (t.organization || t.person).id });
+  }
+  const fulls = await mapLimit([...refs.values()], 5, async (r) => ({
+    kind: r.kind,
+    data: r.kind === 'org' ? await getOrganization(r.id) : await getPerson(r.id),
+  }));
+
+  const orgRecipient = config.orgRecipient || 'contact';
+  const candidates = [];
+  for (const { kind, data } of fulls) {
+    if (config.categoryId && String(data.category?.id) !== String(config.categoryId)) continue;
+    if (kind === 'person') {
+      candidates.push(candidateFromPerson(data));
+      continue;
+    }
+    const orgCandidate = candidateFromOrg(data);
+    // `people` da empresa já traz id, nome e e-mail de cada contato.
+    const contacts = (data.people || []).map((p) => ({
+      ...orgCandidate,
+      key: `person:${p.id}`,
+      name: p.name,
+      email: p.email || null,
+      subtitle: data.name,
+      values: { ...orgCandidate.values, nome: p.name || '—', primeiroNome: firstName(p.name) || 'tudo bem' },
+    }));
+    if (orgRecipient === 'company') {
+      candidates.push(orgCandidate);
+    } else if (orgRecipient === 'both') {
+      candidates.push(...contacts);
+      if (orgCandidate.email) candidates.push(orgCandidate);
+    } else {
+      const withEmail = contacts.filter((c) => c.email);
+      candidates.push(...(withEmail.length ? withEmail : [orgCandidate]));
+    }
+  }
+  return candidates;
+}
+
 async function collect(config) {
-  const candidates = config.source === 'deals' ? await collectDeals(config) : await collectPeople(config);
+  const candidates =
+    config.source === 'deals'
+      ? await collectDeals(config)
+      : config.source === 'tasks'
+        ? await collectTasks(config)
+        : await collectPeople(config);
   const ready = candidates.filter((c) => c.email);
   const missingEmail = candidates
     .filter((c) => !c.email)
@@ -389,6 +529,9 @@ function validate(config) {
   if (config.source === 'deals' && !config.dealStageId) {
     throw new Error('Escolha a etapa do funil.');
   }
+  if (config.source === 'tasks' && !config.taskDate) {
+    throw new Error('Escolha o dia das tarefas.');
+  }
 }
 
 export async function getState() {
@@ -398,6 +541,9 @@ export async function getState() {
 export async function preview(config) {
   if (config?.source === 'deals' && !config.dealStageId) {
     throw new Error('Escolha a etapa do funil antes de pré-visualizar.');
+  }
+  if (config?.source === 'tasks' && !config.taskDate) {
+    throw new Error('Escolha o dia das tarefas antes de pré-visualizar.');
   }
   const { candidates, ready, missingEmail } = await collect(config);
   return {
